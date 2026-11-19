@@ -18,6 +18,10 @@
     <SolidColorBrush x:Key="LocalSoftBrush" Color="#173228"/>
     <SolidColorBrush x:Key="AnyBrush" Color="#8EBFEE"/>
     <SolidColorBrush x:Key="AnySoftBrush" Color="#152838"/>
+    <SolidColorBrush x:Key="GoldSoftBrush" Color="#3A3018"/>
+    <SolidColorBrush x:Key="SystemFgBrush" Color="#9BB0C4"/>
+    <SolidColorBrush x:Key="SystemSoftBrush" Color="#1A2834"/>
+    <SolidColorBrush x:Key="ThirdPartyRowBrush" Color="#1A1712"/>
     <SolidColorBrush x:Key="HoverBrush" Color="#1A242C"/>
     <LinearGradientBrush x:Key="ShellBrush" StartPoint="0,0" EndPoint="1,1">
       <GradientStop Color="#161A22" Offset="0"/>

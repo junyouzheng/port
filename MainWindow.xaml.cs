@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
@@ -130,7 +131,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        PlaceInCenter();
         if (PresentationSource.FromVisual(this) is HwndSource source)
             source.AddHook(WndProc);
     }
@@ -161,9 +161,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        WindowState = WindowState.Normal;
-        PlaceInCenter();
         Show();
+        WindowState = WindowState.Maximized;
         Activate();
     }
 
@@ -186,23 +185,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnStateChanged(object? sender, EventArgs e)
     {
-        if (_forcingState || _hiding || !IsVisible || _exitRequested || WindowState == WindowState.Normal)
+        if (_forcingState || _hiding || !IsVisible || _exitRequested || WindowState == WindowState.Maximized)
             return;
         _forcingState = true;
-        WindowState = WindowState.Normal;
-        PlaceInCenter();
+        WindowState = WindowState.Maximized;
         _forcingState = false;
-    }
-
-    private void PlaceInCenter()
-    {
-        var area = SystemParameters.WorkArea;
-        var width = Math.Clamp(area.Width * 0.68, 980, 1160);
-        var height = Math.Clamp(area.Height * 0.72, 640, 760);
-        Width = width;
-        Height = height;
-        Left = area.Left + Math.Max(0, (area.Width - width) / 2);
-        Top = area.Top + Math.Max(0, (area.Height - height) / 2);
     }
 
     private void OnDeactivated(object? sender, EventArgs e)
@@ -226,7 +213,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (node is FrameworkElement { DataContext: RowVm row })
             {
-                var text = $"{row.Address}:{row.Port}  {row.ProcessName}  PID {row.Pid}  {row.PathTip}";
+                var text = $"{row.Address}:{row.Port}  {row.ProcessName}  {row.Origin}  PID {row.Pid}  {row.PathTip}";
                 try
                 {
                     Clipboard.SetText(text);
@@ -259,7 +246,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!IsLoaded)
                 return;
             var sig = string.Join('\n', list.Select(entry =>
-                $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Path}|{entry.Kind}"));
+                $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Path}|{entry.Kind}|{entry.Origin}"));
             if (sig != _snapSig)
             {
                 _snapSig = sig;
@@ -290,15 +277,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return false;
             if (string.IsNullOrWhiteSpace(_searchText))
                 return true;
-            var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.ProcessName} {entry.Path} {entry.Pid} {entry.Kind}";
+            var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.ProcessName} {entry.Path} {entry.Pid} {entry.Kind} {entry.Origin}";
             return blob.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase);
         }).ToList();
 
-        var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Path}|{entry.Kind}"))
+        var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Path}|{entry.Kind}|{entry.Origin}"))
                   + $"|{_searchText}|{_includeUdp}";
-        var tcpTotal = _all.Count(entry => entry.Protocol == "TCP");
-        var total = IncludeUdp ? _all.Count : tcpTotal;
-        CountText = IncludeUdp ? $"显示 {filtered.Count} / {total}" : $"显示 {filtered.Count} / {total} 个 TCP";
+        var third = filtered.Count(entry => entry.Origin != "系统");
+        var system = filtered.Count - third;
+        CountText = $"第三方 {third} · 系统 {system}";
 
         if (sig == _filterSig)
             return;
@@ -306,8 +293,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var offset = ListScroll?.VerticalOffset ?? 0;
         Rows.Clear();
+        string? previous = null;
         foreach (var entry in filtered)
-            Rows.Add(new RowVm(entry));
+        {
+            Rows.Add(new RowVm(entry, entry.Origin != previous));
+            previous = entry.Origin;
+        }
         EmptyVisibility = Rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (ListScroll != null)
             Dispatcher.BeginInvoke(() => ListScroll.ScrollToVerticalOffset(offset), DispatcherPriority.Background);
@@ -389,15 +380,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        const int wmGetMinMaxInfo = 0x0024;
         const int wmSysCommand = 0x0112;
-        if (msg == wmSysCommand)
+        if (msg == wmGetMinMaxInfo)
+        {
+            FitMaximizedToWorkArea(hwnd, lParam);
+            handled = true;
+        }
+        else if (msg == wmSysCommand)
         {
             var command = wParam.ToInt32() & 0xFFF0;
-            if (command is 0xF000 or 0xF010 or 0xF020 or 0xF030 or 0xF120)
+            if (command is 0xF000 or 0xF010 or 0xF020 or 0xF120)
                 handled = true;
         }
 
         return IntPtr.Zero;
+    }
+
+    private static void FitMaximizedToWorkArea(IntPtr hwnd, IntPtr lParam)
+    {
+        var info = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+        var monitor = MonitorFromWindow(hwnd, 2);
+        var monitorInfo = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref monitorInfo))
+            return;
+
+        var work = monitorInfo.rcWork;
+        var screen = monitorInfo.rcMonitor;
+        info.ptMaxPosition.x = work.Left - screen.Left;
+        info.ptMaxPosition.y = work.Top - screen.Top;
+        info.ptMaxSize.x = work.Right - work.Left;
+        info.ptMaxSize.y = work.Bottom - work.Top;
+        Marshal.StructureToPtr(info, lParam, true);
     }
 
     private void RelaunchElevated()
@@ -453,13 +467,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _statusText = "正在读取本机端口";
     private string _countText = "";
     private Visibility _emptyVisibility = Visibility.Collapsed;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxPoint
+    {
+        public int x;
+        public int y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo
+    {
+        public MinMaxPoint ptReserved;
+        public MinMaxPoint ptMaxSize;
+        public MinMaxPoint ptMaxPosition;
+        public MinMaxPoint ptMinTrackSize;
+        public MinMaxPoint ptMaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RectNative
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int cbSize;
+        public RectNative rcMonitor;
+        public RectNative rcWork;
+        public int dwFlags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 }
 
 public sealed class RowVm
 {
-    public RowVm(PortEntry entry) => Entry = entry;
+    public RowVm(PortEntry entry, bool showGroup)
+    {
+        Entry = entry;
+        GroupHeaderVisibility = showGroup ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     public PortEntry Entry { get; }
+    public string Origin => Entry.Origin;
+    public string GroupTitle => Entry.Origin == "系统" ? "系统" : "第三方软件";
+    public Visibility GroupHeaderVisibility { get; }
+    public Brush OriginForeground => BrushOf(Entry.Origin == "系统" ? "SystemFgBrush" : "GoldBrush");
+    public Brush OriginBackground => BrushOf(Entry.Origin == "系统" ? "SystemSoftBrush" : "GoldSoftBrush");
+    public Brush RowBackground => BrushOf(Entry.Origin == "系统" ? "SurfaceBrush" : "ThirdPartyRowBrush");
     public string Protocol => Entry.Protocol;
     public Brush ProtocolForeground => BrushOf(Entry.Protocol == "UDP" ? "UdpBrush" : "TcpBrush");
     public Brush ProtocolBackground => BrushOf(Entry.Protocol == "UDP" ? "UdpSoftBrush" : "TcpSoftBrush");

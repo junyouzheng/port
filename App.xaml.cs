@@ -108,6 +108,7 @@ public partial class App : System.Windows.Application
                 .Append(row.Port).Append('\t')
                 .Append(row.Pid).Append('\t')
                 .Append(row.ProcessName).Append('\t')
+                .Append(row.Origin).Append('\t')
                 .Append(row.Kind).Append('\t')
                 .Append(row.Path).Append('\n');
         }

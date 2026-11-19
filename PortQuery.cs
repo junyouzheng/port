@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace PortPanel;
@@ -15,7 +16,8 @@ public sealed record PortEntry(
     int Pid,
     string ProcessName,
     string Path,
-    string Kind);
+    string Kind,
+    string Origin);
 
 internal static class PortQuery
 {
@@ -32,6 +34,23 @@ internal static class PortQuery
         "winlogon", "dwm", "fontdrvhost", "Secure System", "Memory Compression", "svchost", "LsaIso"
     };
 
+    private static readonly HashSet<string> SystemNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "System", "Idle", "Registry", "smss", "csrss", "wininit", "services", "lsass", "LsaIso",
+        "winlogon", "dwm", "fontdrvhost", "Secure System", "Memory Compression", "svchost",
+        "spoolsv", "dllhost", "RuntimeBroker", "sihost", "ctfmon", "explorer", "taskhostw", "conhost",
+        "WmiPrvSE", "unsecapp", "SearchIndexer", "SearchProtocolHost", "SearchFilterHost", "SearchHost",
+        "StartMenuExperienceHost", "ShellExperienceHost", "TextInputHost", "ApplicationFrameHost",
+        "SystemSettings", "SystemSettingsBroker", "LockApp", "UserOOBEBroker", "backgroundTaskHost",
+        "CompPkgSrv", "audiodg", "dasHost", "MoUsoCoreWorker", "MusNotification", "MusNotificationUx",
+        "TiWorker", "TrustedInstaller", "SecurityHealthService", "SecurityHealthSystray", "MsMpEng",
+        "NisSrv", "smartscreen", "SgrmBroker", "WidgetService", "Widgets", "AggregatorHost",
+        "DataExchangeHost", "CredentialUIBroker", "msdtc", "WUDFHost", "wlanext", "ShellHost",
+        "AppHostRegistrationVerifier", "GameBar", "GameBarFTServer", "GameBarPresenceWriter"
+    };
+
+    private static readonly Dictionary<string, bool> MicrosoftSigned = new(StringComparer.OrdinalIgnoreCase);
+
     internal static List<PortEntry> Snapshot()
     {
         _ = Marshal.SizeOf<MibTcpRowOwnerPid>();
@@ -44,7 +63,8 @@ internal static class PortQuery
         Collect(AfInet6, UdpTableOwnerPid, tcp: false, list, described);
         return list
             .DistinctBy(entry => (entry.Protocol, entry.Address, entry.Port, entry.Pid))
-            .OrderBy(entry => entry.Port)
+            .OrderBy(entry => entry.Origin == "系统")
+            .ThenBy(entry => entry.Port)
             .ThenBy(entry => entry.Protocol, StringComparer.Ordinal)
             .ThenBy(entry => entry.Address, StringComparer.Ordinal)
             .ToList();
@@ -180,7 +200,8 @@ internal static class PortQuery
             pid,
             info.Name,
             info.Path,
-            kind));
+            kind,
+            IsSystem(info.Name, info.Path, pid) ? "系统" : "第三方"));
     }
 
     private readonly record struct ProcessInfo(string Name, string Path, bool Protected);
@@ -212,6 +233,55 @@ internal static class PortQuery
             return new ProcessInfo("权限不足", "", true);
 
         return new ProcessInfo(name, path, ProtectedNames.Contains(name));
+    }
+
+    private static bool IsSystem(string name, string path, int pid)
+    {
+        if (pid <= 4 || SystemNames.Contains(name))
+            return true;
+        if (string.IsNullOrEmpty(path))
+            return name is "权限不足" or "已退出";
+
+        var file = Path.GetFileNameWithoutExtension(path);
+        if (SystemNames.Contains(file))
+            return true;
+        return IsWindowsComponent(path) && IsMicrosoftSigned(path);
+    }
+
+    private static bool IsWindowsComponent(string path)
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        if (windows.Length == 0)
+            return false;
+        var full = Path.GetFullPath(path);
+        var root = windows.TrimEnd('\\') + "\\";
+        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            return false;
+        var rest = full[root.Length..];
+        return rest.StartsWith("System32\\", StringComparison.OrdinalIgnoreCase)
+            || rest.StartsWith("SysWOW64\\", StringComparison.OrdinalIgnoreCase)
+            || rest.StartsWith("SystemApps\\", StringComparison.OrdinalIgnoreCase)
+            || rest.StartsWith("WinSxS\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsMicrosoftSigned(string path)
+    {
+        if (MicrosoftSigned.TryGetValue(path, out var cached))
+            return cached;
+        var signed = false;
+        try
+        {
+            var subject = X509Certificate.CreateFromSignedFile(path).Subject;
+            signed = subject.Contains("Microsoft Corporation", StringComparison.OrdinalIgnoreCase)
+                || subject.Contains("Microsoft Windows", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            signed = false;
+        }
+
+        MicrosoftSigned[path] = signed;
+        return signed;
     }
 
     private static string? QueryPath(int pid)
