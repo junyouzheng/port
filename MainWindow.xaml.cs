@@ -1,0 +1,478 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Security.Principal;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Shell;
+using System.Windows.Threading;
+
+namespace PortPanel;
+
+public partial class MainWindow : Window, INotifyPropertyChanged
+{
+    private readonly DispatcherTimer _timer;
+    private readonly bool _isAdmin;
+    private readonly TrayService _tray;
+    private IReadOnlyList<PortEntry> _all = [];
+    private string _snapSig = "";
+    private string _filterSig = "";
+    private bool _refreshing;
+    private bool _exitRequested;
+    private bool _suppressStartup;
+    private bool _ignoreTrayToggle;
+    private bool _hiding;
+    private bool _forcingState;
+    private string? _notice;
+
+    public MainWindow()
+    {
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _timer.Tick += (_, _) => Refresh();
+        using (var identity = WindowsIdentity.GetCurrent())
+            _isAdmin = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        AdminText = _isAdmin ? "管理员" : "标准用户";
+        AdminBrush = Freeze(_isAdmin ? Color.FromRgb(0x8F, 0xD0, 0xB0) : Color.FromRgb(0xC9, 0xB0, 0xA0));
+        ElevateVisibility = _isAdmin ? Visibility.Collapsed : Visibility.Visible;
+        DataContext = this;
+        InitializeComponent();
+        _tray = new TrayService(ToggleFromTray, () => StartupEnabled = !StartupEnabled, ExitApp);
+        Loaded += (_, _) =>
+        {
+            Refresh();
+            if (AutoRefresh)
+                _timer.Start();
+            SyncStartup();
+        };
+    }
+
+    public ObservableCollection<RowVm> Rows { get; } = new();
+
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (!Set(ref _searchText, value))
+                return;
+            OnPropertyChanged(nameof(SearchWatermark));
+            ApplyFilter();
+        }
+    }
+
+    public Visibility SearchWatermark => string.IsNullOrEmpty(_searchText) ? Visibility.Visible : Visibility.Collapsed;
+
+    public bool IncludeUdp
+    {
+        get => _includeUdp;
+        set
+        {
+            if (Set(ref _includeUdp, value))
+                ApplyFilter();
+        }
+    }
+
+    public bool AutoRefresh
+    {
+        get => _autoRefresh;
+        set
+        {
+            if (!Set(ref _autoRefresh, value) || !IsLoaded)
+                return;
+            if (value)
+                _timer.Start();
+            else
+                _timer.Stop();
+        }
+    }
+
+    public string AdminText { get; }
+    public Brush AdminBrush { get; }
+    public Visibility ElevateVisibility { get; }
+
+    public bool StartupEnabled
+    {
+        get => _startupEnabled;
+        set
+        {
+            if (_startupEnabled == value)
+                return;
+            if (!_suppressStartup)
+            {
+                try
+                {
+                    StartupTask.SetEnabled(value);
+                    StartupPreference.Save(value);
+                }
+                catch (Exception ex)
+                {
+                    StatusText = Stamp("开机启动没有写上：" + ex.Message);
+                    return;
+                }
+            }
+
+            Set(ref _startupEnabled, value);
+            _tray?.SetStartupChecked(value);
+        }
+    }
+
+    public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
+    public string CountText { get => _countText; private set => Set(ref _countText, value); }
+    public Visibility EmptyVisibility { get => _emptyVisibility; private set => Set(ref _emptyVisibility, value); }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        PlaceInCenter();
+        if (PresentationSource.FromVisual(this) is HwndSource source)
+            source.AddHook(WndProc);
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (_exitRequested)
+        {
+            base.OnClosing(e);
+            return;
+        }
+
+        e.Cancel = true;
+        HideToTray();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _timer.Stop();
+        base.OnClosed(e);
+    }
+
+    public void BringToFront()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(BringToFront);
+            return;
+        }
+
+        WindowState = WindowState.Normal;
+        PlaceInCenter();
+        Show();
+        Activate();
+    }
+
+    private void OnPreviewKey(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.F5)
+        {
+            Refresh();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+        }
+    }
+
+    private void OnRefreshClick(object sender, RoutedEventArgs e) => Refresh();
+
+    private void OnStateChanged(object? sender, EventArgs e)
+    {
+        if (_forcingState || _hiding || !IsVisible || _exitRequested || WindowState == WindowState.Normal)
+            return;
+        _forcingState = true;
+        WindowState = WindowState.Normal;
+        PlaceInCenter();
+        _forcingState = false;
+    }
+
+    private void PlaceInCenter()
+    {
+        var area = SystemParameters.WorkArea;
+        var width = Math.Clamp(area.Width * 0.68, 980, 1160);
+        var height = Math.Clamp(area.Height * 0.72, 640, 760);
+        Width = width;
+        Height = height;
+        Left = area.Left + Math.Max(0, (area.Width - width) / 2);
+        Top = area.Top + Math.Max(0, (area.Height - height) / 2);
+    }
+
+    private void OnDeactivated(object? sender, EventArgs e)
+    {
+        if (!IsVisible || _exitRequested || _hiding)
+            return;
+        HideToTray();
+        // A tray left-click deactivates the window before MouseClick. Ignore that click so it stays hidden.
+        _ignoreTrayToggle = true;
+        Dispatcher.BeginInvoke(() => _ignoreTrayToggle = false, DispatcherPriority.ApplicationIdle);
+    }
+
+    private void OnElevate(object sender, RoutedEventArgs e) => RelaunchElevated();
+
+    private void OnListDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 2 || e.OriginalSource is not DependencyObject source)
+            return;
+
+        for (var node = source; node != null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is FrameworkElement { DataContext: RowVm row })
+            {
+                var text = $"{row.Address}:{row.Port}  {row.ProcessName}  PID {row.Pid}  {row.PathTip}";
+                try
+                {
+                    Clipboard.SetText(text);
+                    _notice = $"已复制 {row.Address}:{row.Port}";
+                    StatusText = Stamp(_notice);
+                }
+                catch
+                {
+                    StatusText = Stamp("复制失败");
+                }
+
+                return;
+            }
+        }
+    }
+
+    private void Refresh()
+    {
+        if (_refreshing)
+            return;
+        _refreshing = true;
+        _ = LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var list = await Task.Run(PortQuery.Snapshot);
+            if (!IsLoaded)
+                return;
+            var sig = string.Join('\n', list.Select(entry =>
+                $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Path}|{entry.Kind}"));
+            if (sig != _snapSig)
+            {
+                _snapSig = sig;
+                _all = list;
+                var tcpCount = list.Count(entry => entry.Protocol == "TCP");
+                _tray.SetTip($"本机端口与进程面板 · {tcpCount} 个 TCP");
+            }
+
+            ApplyFilter();
+            StatusText = Stamp(_notice ?? "已更新 · 只读本机，不访问网络");
+            _notice = null;
+        }
+        catch (Exception ex)
+        {
+            StatusText = Stamp("读取失败：" + ex.Message);
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        var filtered = _all.Where(entry =>
+        {
+            if (!IncludeUdp && entry.Protocol == "UDP")
+                return false;
+            if (string.IsNullOrWhiteSpace(_searchText))
+                return true;
+            var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.ProcessName} {entry.Path} {entry.Pid} {entry.Kind}";
+            return blob.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase);
+        }).ToList();
+
+        var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Path}|{entry.Kind}"))
+                  + $"|{_searchText}|{_includeUdp}";
+        var tcpTotal = _all.Count(entry => entry.Protocol == "TCP");
+        var total = IncludeUdp ? _all.Count : tcpTotal;
+        CountText = IncludeUdp ? $"显示 {filtered.Count} / {total}" : $"显示 {filtered.Count} / {total} 个 TCP";
+
+        if (sig == _filterSig)
+            return;
+        _filterSig = sig;
+
+        var offset = ListScroll?.VerticalOffset ?? 0;
+        Rows.Clear();
+        foreach (var entry in filtered)
+            Rows.Add(new RowVm(entry));
+        EmptyVisibility = Rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (ListScroll != null)
+            Dispatcher.BeginInvoke(() => ListScroll.ScrollToVerticalOffset(offset), DispatcherPriority.Background);
+    }
+
+    private void ToggleFromTray()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(ToggleFromTray);
+            return;
+        }
+
+        if (_ignoreTrayToggle)
+            return;
+
+        if (IsVisible)
+            HideToTray();
+        else
+            BringToFront();
+    }
+
+    private void HideToTray()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(HideToTray);
+            return;
+        }
+
+        if (!IsVisible)
+            return;
+        _hiding = true;
+        try
+        {
+            Hide();
+        }
+        finally
+        {
+            _hiding = false;
+        }
+    }
+
+    private void ExitApp()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(ExitApp);
+            return;
+        }
+
+        if (_exitRequested)
+            return;
+        _exitRequested = true;
+        _timer.Stop();
+        _tray.Dispose();
+        Close();
+    }
+
+    private void SyncStartup()
+    {
+        var preferred = StartupPreference.Load() ?? true;
+        try
+        {
+            if (StartupTask.IsEnabled() != preferred)
+                StartupTask.SetEnabled(preferred);
+            StartupPreference.Save(preferred);
+        }
+        catch (Exception ex)
+        {
+            StatusText = Stamp("开机启动没有写上：" + ex.Message);
+            preferred = false;
+        }
+
+        _suppressStartup = true;
+        StartupEnabled = preferred;
+        _suppressStartup = false;
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int wmSysCommand = 0x0112;
+        if (msg == wmSysCommand)
+        {
+            var command = wParam.ToInt32() & 0xFFF0;
+            if (command is 0xF000 or 0xF010 or 0xF020 or 0xF030 or 0xF120)
+                handled = true;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private void RelaunchElevated()
+    {
+        var path = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(path) || !path.EndsWith("port-panel.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusText = Stamp("请从 port-panel.exe 打开后再提权");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(path)
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = Path.GetDirectoryName(path) ?? ""
+            });
+            ExitApp();
+        }
+        catch (Win32Exception)
+        {
+            StatusText = Stamp("没有授予管理员权限");
+        }
+    }
+
+    private static string Stamp(string text) => $"{DateTime.Now:HH:mm:ss}  {text}";
+
+    private static SolidColorBrush Freeze(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
+    private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+            return false;
+        field = value;
+        OnPropertyChanged(name);
+        return true;
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    private string _searchText = "";
+    private bool _includeUdp;
+    private bool _autoRefresh = true;
+    private bool _startupEnabled;
+    private string _statusText = "正在读取本机端口";
+    private string _countText = "";
+    private Visibility _emptyVisibility = Visibility.Collapsed;
+}
+
+public sealed class RowVm
+{
+    public RowVm(PortEntry entry) => Entry = entry;
+
+    public PortEntry Entry { get; }
+    public string Protocol => Entry.Protocol;
+    public Brush ProtocolForeground => BrushOf(Entry.Protocol == "UDP" ? "UdpBrush" : "TcpBrush");
+    public Brush ProtocolBackground => BrushOf(Entry.Protocol == "UDP" ? "UdpSoftBrush" : "TcpSoftBrush");
+    public string Address => Entry.Address;
+    public string AddressHint => Entry.AddressHint;
+    public Brush HintForeground => BrushOf(Entry.AddressHint == "仅本机" ? "LocalBrush" : "AnyBrush");
+    public Brush HintBackground => BrushOf(Entry.AddressHint == "仅本机" ? "LocalSoftBrush" : "AnySoftBrush");
+    public Visibility HintVisibility => string.IsNullOrEmpty(Entry.AddressHint) ? Visibility.Collapsed : Visibility.Visible;
+
+    private static Brush BrushOf(string key) => (Brush)System.Windows.Application.Current.FindResource(key);
+    public int Port => Entry.Port;
+    public string ProcessName => Entry.ProcessName;
+    public int Pid => Entry.Pid;
+    public string PathText => string.IsNullOrEmpty(Entry.Path) ? "—" : Entry.Path;
+    public string PathTip => string.IsNullOrEmpty(Entry.Path) ? Entry.ProcessName : Entry.Path;
+}
