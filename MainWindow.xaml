@@ -63,23 +63,13 @@
       <DockPanel Margin="16,12,16,10">
         <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
-            <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="360"/>
+            <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <Grid>
-            <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
-                     AutomationProperties.AutomationId="search"
-                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     WindowChrome.IsHitTestVisibleInChrome="True"/>
-            <TextBlock Text="端口、进程、路径" Margin="12,0,0,0" VerticalAlignment="Center"
-                       Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False"
-                       Visibility="{Binding SearchWatermark}"/>
-          </Grid>
-          <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
             <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding IncludeUdp}"
-                          WindowChrome.IsHitTestVisibleInChrome="True">
+                          Margin="0" WindowChrome.IsHitTestVisibleInChrome="True">
               <StackPanel Orientation="Horizontal">
                 <Ellipse Width="7" Height="7" Fill="{StaticResource UdpBrush}" Margin="0,1,6,0"/>
                 <TextBlock Text="UDP" VerticalAlignment="Center"/>
@@ -100,10 +90,35 @@
               </StackPanel>
             </ToggleButton>
           </StackPanel>
-          <TextBlock Grid.Column="2" Text="{Binding CountText}" Foreground="{StaticResource WarmBrush}"
-                     HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0"/>
-          <Button Grid.Column="3" Content="刷新" Style="{StaticResource AccentButton}" Click="OnRefreshClick"
-                  Margin="8,0,0,0" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="F5"/>
+          <Grid Grid.Column="1" VerticalAlignment="Center">
+            <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
+                     AutomationProperties.AutomationId="search"
+                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     WindowChrome.IsHitTestVisibleInChrome="True"/>
+            <TextBlock Text="端口、进程、路径" Margin="12,0,0,0" VerticalAlignment="Center"
+                       Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Style.Triggers>
+                    <MultiDataTrigger>
+                      <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Text, ElementName=SearchBox}" Value=""/>
+                        <Condition Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchBox}" Value="False"/>
+                      </MultiDataTrigger.Conditions>
+                      <Setter Property="Visibility" Value="Visible"/>
+                    </MultiDataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </Grid>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBlock Text="{Binding CountText}" Foreground="{StaticResource WarmBrush}"
+                       VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <Button Content="刷新" Style="{StaticResource AccentButton}" Click="OnRefreshClick"
+                    WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="F5"/>
+          </StackPanel>
         </Grid>
 
         <Border Style="{StaticResource Card}" Padding="0">

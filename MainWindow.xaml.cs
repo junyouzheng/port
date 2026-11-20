@@ -59,14 +59,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _searchText;
         set
         {
-            if (!Set(ref _searchText, value))
-                return;
-            OnPropertyChanged(nameof(SearchWatermark));
-            ApplyFilter();
+            if (Set(ref _searchText, value))
+                ApplyFilter();
         }
     }
-
-    public Visibility SearchWatermark => string.IsNullOrEmpty(_searchText) ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IncludeUdp
     {
