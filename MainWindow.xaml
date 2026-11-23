@@ -85,8 +85,15 @@
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
           <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+            <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding IncludeSystem}"
+                          Margin="0" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="显示系统端口">
+              <StackPanel Orientation="Horizontal">
+                <Ellipse Width="7" Height="7" Fill="{StaticResource SystemFgBrush}" Margin="0,1,6,0"/>
+                <TextBlock Text="系统" VerticalAlignment="Center"/>
+              </StackPanel>
+            </ToggleButton>
             <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding IncludeUdp}"
-                          Margin="0" WindowChrome.IsHitTestVisibleInChrome="True">
+                          WindowChrome.IsHitTestVisibleInChrome="True">
               <StackPanel Orientation="Horizontal">
                 <Ellipse Width="7" Height="7" Fill="{StaticResource UdpBrush}" Margin="0,1,6,0"/>
                 <TextBlock Text="UDP" VerticalAlignment="Center"/>

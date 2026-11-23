@@ -66,6 +66,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IncludeSystem
+    {
+        get => _includeSystem;
+        set
+        {
+            if (Set(ref _includeSystem, value))
+                ApplyFilter();
+        }
+    }
+
     public bool IncludeUdp
     {
         get => _includeUdp;
@@ -277,6 +287,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var filtered = _all.Where(entry =>
         {
+            if (!IncludeSystem && entry.Origin == "系统")
+                return false;
             if (!IncludeUdp && entry.Protocol == "UDP")
                 return false;
             if (string.IsNullOrWhiteSpace(_searchText))
@@ -286,10 +298,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }).ToList();
 
         var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Path}|{entry.Kind}|{entry.Origin}"))
-                  + $"|{_searchText}|{_includeUdp}";
+                  + $"|{_searchText}|{_includeUdp}|{_includeSystem}";
         var third = filtered.Count(entry => entry.Origin != "系统");
         var system = filtered.Count - third;
-        CountText = $"第三方 {third} · 系统 {system}";
+        CountText = IncludeSystem ? $"第三方 {third} · 系统 {system}" : $"第三方 {third}";
 
         if (sig == _filterSig)
             return;
@@ -467,6 +479,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     private string _searchText = "";
+    private bool _includeSystem;
     private bool _includeUdp;
     private bool _autoRefresh = true;
     private bool _startupEnabled;
