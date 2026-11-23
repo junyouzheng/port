@@ -38,7 +38,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         using (var identity = WindowsIdentity.GetCurrent())
             _isAdmin = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         AdminText = _isAdmin ? "管理员" : "标准用户";
-        AdminBrush = Freeze(_isAdmin ? Color.FromRgb(0x8F, 0xD0, 0xB0) : Color.FromRgb(0xC9, 0xB0, 0xA0));
+        AdminBrush = Freeze(_isAdmin ? Color.FromRgb(0x30, 0xD1, 0x58) : Color.FromRgb(0xEB, 0xEB, 0xF5));
         ElevateVisibility = _isAdmin ? Visibility.Collapsed : Visibility.Visible;
         DataContext = this;
         InitializeComponent();
@@ -215,7 +215,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnListCardSize(object sender, SizeChangedEventArgs e)
     {
-        ListCard.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 12, 12);
+        ListCard.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 8, 8);
     }
 
     private void OnListDoubleClick(object sender, MouseButtonEventArgs e)
