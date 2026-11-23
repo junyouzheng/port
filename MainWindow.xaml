@@ -89,22 +89,22 @@
               <TextBlock Text="第三方" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
-          <Button Grid.Row="4" Style="{StaticResource NavExposed}" Tag="exposed" Click="OnNav"
-                  Margin="0" VerticalAlignment="Center" >
-            <StackPanel Orientation="Horizontal">
-              <TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="18"
-                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                         VerticalAlignment="Center" Margin="0,0,12,0"/>
-              <TextBlock Text="对外" VerticalAlignment="Center"/>
-            </StackPanel>
-          </Button>
-          <Button Grid.Row="5" Style="{StaticResource NavUdp}" Tag="udp" Click="OnNav"
+          <Button Grid.Row="4" Style="{StaticResource NavUdp}" Tag="udp" Click="OnNav"
                   Margin="0" VerticalAlignment="Center" >
             <StackPanel Orientation="Horizontal">
               <TextBlock Text="&#xE701;" FontFamily="Segoe MDL2 Assets" FontSize="18"
                          Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                          VerticalAlignment="Center" Margin="0,0,12,0"/>
               <TextBlock Text="UDP" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Button Grid.Row="5" Style="{StaticResource NavExposed}" Tag="exposed" Click="OnNav"
+                  Margin="0" VerticalAlignment="Center" >
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE774;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                         VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <TextBlock Text="对外" VerticalAlignment="Center"/>
             </StackPanel>
           </Button>
           <Button Grid.Row="6" Style="{StaticResource NavLink}" Tag="link" Click="OnNav"
