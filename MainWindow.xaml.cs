@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -20,11 +22,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _refreshing;
     private bool _exitRequested;
     private bool _suppressStartup;
+    private readonly DispatcherTimer _refreshTimer;
     public MainWindow()
     {
         DataContext = this;
         InitializeComponent();
+        Icon = PortIcon.CreateImage();
         _tray = new TrayService(ToggleFromTray);
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _refreshTimer.Tick += (_, _) => Refresh();
+        _refreshTimer.Start();
         Dispatcher.BeginInvoke(BeginSession, DispatcherPriority.ApplicationIdle);
     }
 
@@ -46,13 +53,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string AddressHeader => _nav == "link" ? "对方" : "地址";
+    public string PortHeader => _nav == "link" ? "本机" : "端口";
+    public string EmptyText => _nav == "link" ? "没有已建立的连接" : "没有匹配的监听端口";
+
     public string Nav
     {
         get => _nav;
         set
         {
             if (Set(ref _nav, value))
+            {
+                OnPropertyChanged(nameof(AddressHeader));
+                OnPropertyChanged(nameof(PortHeader));
+                OnPropertyChanged(nameof(EmptyText));
                 ApplyFilter();
+            }
+        }
+    }
+
+    public bool AutoRefresh
+    {
+        get => _autoRefresh;
+        set
+        {
+            if (!Set(ref _autoRefresh, value))
+                return;
+            if (value)
+                _refreshTimer.Start();
+            else
+                _refreshTimer.Stop();
         }
     }
 
@@ -139,7 +169,70 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OnRefreshClick(object sender, RoutedEventArgs e) => Refresh();
+    private void OnRowMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu)
+            return;
+        var row = RowOf(menu);
+        var path = row?.Entry.Path ?? "";
+        var directory = string.IsNullOrEmpty(path) ? "" : Path.GetDirectoryName(path) ?? "";
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            if (item.Header is "复制路径")
+                item.IsEnabled = path.Length > 0;
+            else if (item.Header is "打开所在文件夹")
+                item.IsEnabled = directory.Length > 0 && Directory.Exists(directory);
+        }
+    }
+
+    private void OnCopyPort(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { } row)
+            CopyText(row.Port.ToString());
+    }
+
+    private void OnCopyPath(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is { Entry.Path: { Length: > 0 } path })
+            CopyText(path);
+    }
+
+    private void OnOpenFolder(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender) is not { } row)
+            return;
+        var directory = Path.GetDirectoryName(row.Entry.Path);
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            return;
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = $"\"{directory}\"",
+            UseShellExecute = true
+        });
+    }
+
+    private static RowVm? RowOf(object sender)
+    {
+        var menu = sender switch
+        {
+            ContextMenu context => context,
+            MenuItem { Parent: ContextMenu parent } => parent,
+            _ => null
+        };
+        return menu?.PlacementTarget is FrameworkElement { DataContext: RowVm row } ? row : null;
+    }
+
+    private static void CopyText(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+        }
+        catch (Exception)
+        {
+        }
+    }
 
     private void OnExitAsk(object sender, RoutedEventArgs e)
     {
@@ -177,7 +270,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (node is FrameworkElement { DataContext: RowVm row })
             {
-                var text = $"{row.Address}:{row.Port}  {row.ProcessName}  {row.Origin}  PID {row.Pid}  {row.PathTip}";
+                var service = string.IsNullOrEmpty(row.Service) ? "" : $"  {row.Service}";
+                var where = row.Entry.RemotePort > 0
+                    ? $"{row.AddressText}:{row.Entry.RemotePort}  本机 {row.Entry.Address}:{row.Port}"
+                    : $"{row.Address}:{row.Port}";
+                var text = $"{where}  {row.ProcessName}{service}  {row.Origin}  PID {row.Pid}  {row.PathTip}";
                 try
                 {
                     Clipboard.SetText(text);
@@ -207,13 +304,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_exitRequested)
                 return;
             var sig = string.Join('\n', list.Select(entry =>
-                $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Path}|{entry.Kind}|{entry.Origin}"));
+                $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Service}|{entry.Path}|{entry.Kind}|{entry.Origin}|{entry.RemoteAddress}|{entry.RemotePort}"));
             if (sig != _snapSig)
             {
                 _snapSig = sig;
                 _all = list;
-                var tcpCount = list.Count(entry => entry.Protocol == "TCP");
-                _tray.SetTip($"本机端口与进程面板 · {tcpCount} 个 TCP");
+                var tcpCount = list.Count(entry => entry.Protocol == "TCP" && entry.RemotePort == 0);
+                _tray.SetTip($"port · {tcpCount} 个 TCP");
             }
 
             ApplyFilter();
@@ -237,17 +334,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 return _nav switch
                 {
-                    "system" => entry.Origin == "系统" && entry.Protocol != "UDP",
-                    "udp" => entry.Protocol == "UDP",
-                    _ => entry.Origin != "系统" && entry.Protocol != "UDP"
+                    "system" => entry.RemotePort == 0 && entry.Origin == "系统" && entry.Protocol != "UDP",
+                    "udp" => entry.RemotePort == 0 && entry.Protocol == "UDP",
+                    "exposed" => entry.RemotePort == 0 && entry.AddressHint == "全部网卡",
+                    "link" => entry.RemotePort > 0,
+                    _ => entry.RemotePort == 0 && entry.Origin != "系统" && entry.Protocol != "UDP"
                 };
             }
 
-            var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.ProcessName} {entry.Path} {entry.Pid} {entry.Kind} {entry.Origin}";
+            var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.RemoteAddress} {entry.RemotePort} {entry.ProcessName} {entry.Service} {entry.Path} {entry.Pid} {entry.Kind} {entry.Origin}";
             return blob.Contains(query, StringComparison.OrdinalIgnoreCase);
         }).ToList();
 
-        var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Path}|{entry.Kind}|{entry.Origin}"))
+        var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Service}|{entry.Path}|{entry.Kind}|{entry.Origin}|{entry.RemoteAddress}|{entry.RemotePort}"))
                   + $"|{query}|{(searching ? "*" : _nav)}";
         CountText = searching
             ? $"搜索 {filtered.Count}"
@@ -255,6 +354,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 "system" => $"系统 {filtered.Count}",
                 "udp" => $"UDP {filtered.Count}",
+                "exposed" => $"对外 {filtered.Count}",
+                "link" => $"连接 {filtered.Count}",
                 _ => $"第三方 {filtered.Count}"
             };
 
@@ -314,6 +415,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_exitRequested)
             return;
         _exitRequested = true;
+        _refreshTimer.Stop();
         _tray.Dispose();
         Close();
         System.Windows.Application.Current?.Shutdown();
@@ -352,7 +454,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     private string _searchText = "";
-    private string _nav = "third";
+    private string _nav = "system";
+    private bool _autoRefresh = true;
     private bool _startupEnabled;
     private string _countText = "";
     private Visibility _emptyVisibility = Visibility.Collapsed;
@@ -381,14 +484,19 @@ public sealed class RowVm
     public Brush ProtocolBackground => BrushOf(Entry.Protocol == "UDP" ? "UdpSoftBrush" : "TcpSoftBrush");
     public string Address => Entry.Address;
     public string AddressHint => Entry.AddressHint;
-    public Brush HintForeground => BrushOf(Entry.AddressHint == "仅本机" ? "LocalBrush" : "AnyBrush");
-    public Brush HintBackground => BrushOf(Entry.AddressHint == "仅本机" ? "LocalSoftBrush" : "AnySoftBrush");
-    public Visibility HintVisibility => string.IsNullOrEmpty(Entry.AddressHint) ? Visibility.Collapsed : Visibility.Visible;
+    public bool IsLink => Entry.RemotePort > 0;
+    public string AddressText => IsLink ? Entry.RemoteAddress : Entry.Address;
+    public string AddressHintText => IsLink ? Entry.RemotePort.ToString() : Entry.AddressHint;
+    public Brush HintForeground => BrushOf(!IsLink && Entry.AddressHint == "仅本机" ? "LocalBrush" : "AnyBrush");
+    public Brush HintBackground => BrushOf(!IsLink && Entry.AddressHint == "仅本机" ? "LocalSoftBrush" : "AnySoftBrush");
+    public Visibility HintVisibility => string.IsNullOrEmpty(AddressHintText) ? Visibility.Collapsed : Visibility.Visible;
 
     private static Brush BrushOf(string key) => (Brush)System.Windows.Application.Current.FindResource(key);
     public int Port => Entry.Port;
     public string ProcessName => Entry.ProcessName;
     public string ProcessDisplay => WithWrapPoints(Entry.ProcessName);
+    public string Service => Entry.Service;
+    public Visibility ServiceVisibility => string.IsNullOrEmpty(Entry.Service) ? Visibility.Collapsed : Visibility.Visible;
     public int Pid => Entry.Pid;
     public string PathText => string.IsNullOrEmpty(Entry.Path) ? "—" : Entry.Path;
     public string PathDisplay => string.IsNullOrEmpty(Entry.Path) ? "—" : WithWrapPoints(Entry.Path);

@@ -17,16 +17,25 @@ public sealed record PortEntry(
     string ProcessName,
     string Path,
     string Kind,
-    string Origin);
+    string Origin,
+    string Service,
+    string RemoteAddress,
+    int RemotePort);
 
 internal static class PortQuery
 {
     private const int AfInet = 2;
     private const int AfInet6 = 23;
     private const int TcpTableOwnerPidListener = 3;
+    private const int TcpTableOwnerPidConnections = 4;
     private const int UdpTableOwnerPid = 1;
     private const int ListenState = 2;
+    private const int EstablishedState = 5;
     private const uint ProcessQueryLimitedInformation = 0x1000;
+    private const uint ScManagerEnumerateService = 0x0004;
+    private const int ScEnumProcessInfo = 0;
+    private const uint ServiceWin32 = 0x30;
+    private const uint ServiceStateAll = 0x3;
 
     private static readonly HashSet<string> ProtectedNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -57,20 +66,25 @@ internal static class PortQuery
         _ = Marshal.SizeOf<MibTcp6RowOwnerPid>();
         var list = new List<PortEntry>();
         var described = new Dictionary<int, ProcessInfo>();
-        Collect(AfInet, TcpTableOwnerPidListener, tcp: true, list, described);
-        Collect(AfInet6, TcpTableOwnerPidListener, tcp: true, list, described);
-        Collect(AfInet, UdpTableOwnerPid, tcp: false, list, described);
-        Collect(AfInet6, UdpTableOwnerPid, tcp: false, list, described);
+        var services = ServiceLabels();
+        Collect(AfInet, TcpTableOwnerPidListener, tcp: true, established: false, list, described, services);
+        Collect(AfInet6, TcpTableOwnerPidListener, tcp: true, established: false, list, described, services);
+        Collect(AfInet, TcpTableOwnerPidConnections, tcp: true, established: true, list, described, services);
+        Collect(AfInet6, TcpTableOwnerPidConnections, tcp: true, established: true, list, described, services);
+        Collect(AfInet, UdpTableOwnerPid, tcp: false, established: false, list, described, services);
+        Collect(AfInet6, UdpTableOwnerPid, tcp: false, established: false, list, described, services);
         return list
-            .DistinctBy(entry => (entry.Protocol, entry.Address, entry.Port, entry.Pid))
+            .DistinctBy(entry => (entry.Protocol, entry.Address, entry.Port, entry.Pid, entry.RemoteAddress, entry.RemotePort))
             .OrderBy(entry => entry.Origin == "系统")
             .ThenBy(entry => entry.Port)
             .ThenBy(entry => entry.Protocol, StringComparer.Ordinal)
             .ThenBy(entry => entry.Address, StringComparer.Ordinal)
+            .ThenBy(entry => entry.RemoteAddress, StringComparer.Ordinal)
+            .ThenBy(entry => entry.RemotePort)
             .ToList();
     }
 
-    private static void Collect(int family, int tableClass, bool tcp, List<PortEntry> into, Dictionary<int, ProcessInfo> described)
+    private static void Collect(int family, int tableClass, bool tcp, bool established, List<PortEntry> into, Dictionary<int, ProcessInfo> described, Dictionary<int, string> services)
     {
         int size = 0;
         var rc = tcp
@@ -94,9 +108,9 @@ internal static class PortQuery
                 if (rc != 0)
                     throw new Win32Exception((int)rc);
                 if (tcp)
-                    ParseTcp(mem, family, into, described);
+                    ParseTcp(mem, family, established, into, described, services);
                 else
-                    ParseUdp(mem, family, into, described);
+                    ParseUdp(mem, family, into, described, services);
                 return;
             }
             finally
@@ -108,7 +122,7 @@ internal static class PortQuery
         throw new InvalidOperationException("读取端口表失败");
     }
 
-    private static void ParseTcp(IntPtr mem, int family, List<PortEntry> into, Dictionary<int, ProcessInfo> described)
+    private static void ParseTcp(IntPtr mem, int family, bool established, List<PortEntry> into, Dictionary<int, ProcessInfo> described, Dictionary<int, string> services)
     {
         var count = Marshal.ReadInt32(mem);
         if (count <= 0)
@@ -121,10 +135,12 @@ internal static class PortQuery
             for (var i = 0; i < count; i++)
             {
                 var item = Marshal.PtrToStructure<MibTcpRowOwnerPid>(row);
-                if (item.State == ListenState)
+                if (WantTcp(item.State, established))
                 {
                     var address = new IPAddress(item.LocalAddr).ToString();
-                    Add(into, described, "TCP", address, HostPort(item.LocalPort), (int)item.OwningPid);
+                    var remote = established ? new IPAddress(item.RemoteAddr).ToString() : "";
+                    var remotePort = established ? HostPort(item.RemotePort) : 0;
+                    Add(into, described, services, "TCP", address, HostPort(item.LocalPort), (int)item.OwningPid, remote, remotePort);
                 }
 
                 row += rowSize;
@@ -138,17 +154,19 @@ internal static class PortQuery
         for (var i = 0; i < count; i++)
         {
             var item = Marshal.PtrToStructure<MibTcp6RowOwnerPid>(row6);
-            if (item.State == ListenState)
+            if (WantTcp(item.State, established))
             {
                 var address = FormatV6(item.LocalAddr, item.LocalScopeId);
-                Add(into, described, "TCP", address, HostPort(item.LocalPort), (int)item.OwningPid);
+                var remote = established ? FormatV6(item.RemoteAddr, item.RemoteScopeId) : "";
+                var remotePort = established ? HostPort(item.RemotePort) : 0;
+                Add(into, described, services, "TCP", address, HostPort(item.LocalPort), (int)item.OwningPid, remote, remotePort);
             }
 
             row6 += rowSize6;
         }
     }
 
-    private static void ParseUdp(IntPtr mem, int family, List<PortEntry> into, Dictionary<int, ProcessInfo> described)
+    private static void ParseUdp(IntPtr mem, int family, List<PortEntry> into, Dictionary<int, ProcessInfo> described, Dictionary<int, string> services)
     {
         var count = Marshal.ReadInt32(mem);
         if (count <= 0)
@@ -162,7 +180,7 @@ internal static class PortQuery
             {
                 var item = Marshal.PtrToStructure<MibUdpRowOwnerPid>(row);
                 var address = new IPAddress(item.LocalAddr).ToString();
-                Add(into, described, "UDP", address, HostPort(item.LocalPort), (int)item.OwningPid);
+                Add(into, described, services, "UDP", address, HostPort(item.LocalPort), (int)item.OwningPid);
                 row += rowSize;
             }
 
@@ -175,12 +193,15 @@ internal static class PortQuery
         {
             var item = Marshal.PtrToStructure<MibUdp6RowOwnerPid>(row6);
             var address = FormatV6(item.LocalAddr, item.LocalScopeId);
-            Add(into, described, "UDP", address, HostPort(item.LocalPort), (int)item.OwningPid);
+            Add(into, described, services, "UDP", address, HostPort(item.LocalPort), (int)item.OwningPid);
             row6 += rowSize6;
         }
     }
 
-    private static void Add(List<PortEntry> into, Dictionary<int, ProcessInfo> described, string protocol, string address, int port, int pid)
+    private static bool WantTcp(uint state, bool established) =>
+        established ? state == EstablishedState : state == ListenState;
+
+    private static void Add(List<PortEntry> into, Dictionary<int, ProcessInfo> described, Dictionary<int, string> services, string protocol, string address, int port, int pid, string remoteAddress = "", int remotePort = 0)
     {
         if (!described.TryGetValue(pid, out var info))
         {
@@ -201,7 +222,83 @@ internal static class PortQuery
             info.Name,
             info.Path,
             kind,
-            IsSystem(info.Name, info.Path, pid) ? "系统" : "第三方"));
+            IsSystem(info.Name, info.Path, pid) ? "系统" : "第三方",
+            ServiceLabel(info.Name, pid, services),
+            remotePort > 0 ? remoteAddress : "",
+            remotePort > 0 ? remotePort : 0));
+    }
+
+    private static string ServiceLabel(string processName, int pid, Dictionary<int, string> services)
+    {
+        if (!processName.Equals("svchost", StringComparison.OrdinalIgnoreCase))
+            return "";
+        return services.TryGetValue(pid, out var label) ? label : "";
+    }
+
+    private static Dictionary<int, string> ServiceLabels()
+    {
+        try
+        {
+            return QueryServiceLabels();
+        }
+        catch (Exception)
+        {
+            return new Dictionary<int, string>();
+        }
+    }
+
+    private static Dictionary<int, string> QueryServiceLabels()
+    {
+        var grouped = new Dictionary<int, List<string>>();
+        var manager = OpenSCManager(null, null, ScManagerEnumerateService);
+        if (manager == IntPtr.Zero)
+            return new Dictionary<int, string>();
+
+        try
+        {
+            uint needed = 0, returned = 0, resume = 0;
+            EnumServicesStatusEx(manager, ScEnumProcessInfo, ServiceWin32, ServiceStateAll, IntPtr.Zero, 0, out needed, out returned, ref resume, null);
+            if (needed == 0)
+                return new Dictionary<int, string>();
+
+            var buffer = Marshal.AllocHGlobal((int)needed);
+            try
+            {
+                resume = 0;
+                if (!EnumServicesStatusEx(manager, ScEnumProcessInfo, ServiceWin32, ServiceStateAll, buffer, needed, out needed, out returned, ref resume, null))
+                    return new Dictionary<int, string>();
+
+                var rowSize = Marshal.SizeOf<EnumServiceStatusProcess>();
+                for (var i = 0; i < returned; i++)
+                {
+                    var item = Marshal.PtrToStructure<EnumServiceStatusProcess>(buffer + i * rowSize);
+                    var pid = (int)item.Status.ProcessId;
+                    if (pid <= 0)
+                        continue;
+                    var label = string.IsNullOrWhiteSpace(item.DisplayName) ? item.ServiceName : item.DisplayName;
+                    if (string.IsNullOrWhiteSpace(label))
+                        continue;
+                    if (!grouped.TryGetValue(pid, out var names))
+                    {
+                        names = new List<string>();
+                        grouped[pid] = names;
+                    }
+
+                    if (!names.Contains(label, StringComparer.OrdinalIgnoreCase))
+                        names.Add(label);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(manager);
+        }
+
+        return grouped.ToDictionary(pair => pair.Key, pair => string.Join("、", pair.Value), EqualityComparer<int>.Default);
     }
 
     private readonly record struct ProcessInfo(string Name, string Path, bool Protected);
@@ -356,6 +453,47 @@ internal static class PortQuery
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint access);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool EnumServicesStatusEx(
+        IntPtr manager,
+        int infoLevel,
+        uint serviceType,
+        uint serviceState,
+        IntPtr services,
+        uint bufferSize,
+        out uint bytesNeeded,
+        out uint servicesReturned,
+        ref uint resumeHandle,
+        string? group);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool CloseServiceHandle(IntPtr handle);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct EnumServiceStatusProcess
+    {
+        public string ServiceName;
+        public string DisplayName;
+        public ServiceStatusProcess Status;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatusProcess
+    {
+        public uint ServiceType;
+        public uint CurrentState;
+        public uint ControlsAccepted;
+        public uint Win32ExitCode;
+        public uint ServiceSpecificExitCode;
+        public uint CheckPoint;
+        public uint WaitHint;
+        public uint ProcessId;
+        public uint ServiceFlags;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct MibTcpRowOwnerPid

@@ -9,7 +9,7 @@
     <RootNamespace>Port</RootNamespace>
     <AssemblyName>port</AssemblyName>
     <Version>1.0.0</Version>
-    <Product>本机端口与进程面板</Product>
+    <Product>port</Product>
     <Description>查看本机监听端口。不访问网络。</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
