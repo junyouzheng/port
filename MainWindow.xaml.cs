@@ -42,7 +42,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ElevateVisibility = _isAdmin ? Visibility.Collapsed : Visibility.Visible;
         DataContext = this;
         InitializeComponent();
-        _tray = new TrayService(ToggleFromTray, () => StartupEnabled = !StartupEnabled, ExitApp);
+        _tray = new TrayService(ToggleFromTray);
         Dispatcher.BeginInvoke(BeginSession, DispatcherPriority.ApplicationIdle);
     }
 
@@ -116,7 +116,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             Set(ref _startupEnabled, value);
-            _tray?.SetStartupChecked(value);
         }
     }
 
@@ -201,6 +200,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private void OnElevate(object sender, RoutedEventArgs e) => RelaunchElevated();
+
+    private void OnExit(object sender, RoutedEventArgs e) => ExitApp();
+
+    private void OnListCardSize(object sender, SizeChangedEventArgs e)
+    {
+        ListCard.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 12, 12);
+    }
 
     private void OnListDoubleClick(object sender, MouseButtonEventArgs e)
     {

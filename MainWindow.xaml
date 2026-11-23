@@ -23,44 +23,61 @@
 
   <Border x:Name="ShellBorder" BorderThickness="0" Background="{StaticResource ShellBrush}">
     <DockPanel>
-      <Border DockPanel.Dock="Top" Height="48">
+      <Border DockPanel.Dock="Top" Height="60">
         <DockPanel>
           <Border DockPanel.Dock="Bottom" Height="2" Background="{StaticResource AccentLineBrush}"/>
-          <Grid Margin="16,0,16,0">
+          <Grid Margin="22,0,18,0">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto"/>
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-              <Border Width="18" Height="18" CornerRadius="5" Background="#2A2418" Margin="0,0,10,0" VerticalAlignment="Center">
+              <Border Width="28" Height="28" CornerRadius="8" Background="#241E14" Margin="0,0,12,0" VerticalAlignment="Center">
                 <Grid>
-                  <Ellipse Width="6" Height="6" Fill="{StaticResource GoldBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"/>
-                  <Ellipse Width="6" Height="6" Fill="{StaticResource TcpBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,3"/>
+                  <Ellipse Width="8" Height="8" Fill="{StaticResource GoldBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5,5,0,0"/>
+                  <Ellipse Width="8" Height="8" Fill="{StaticResource TcpBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,5,5"/>
                 </Grid>
               </Border>
-              <TextBlock Text="本机端口与进程" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="本机端口与进程" FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock Text="监听端口和占用它们的进程" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0"/>
+              </StackPanel>
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
               <Button Content="以管理员重新打开" Style="{StaticResource PrimaryButton}"
                       Visibility="{Binding ElevateVisibility}" Click="OnElevate"
                       WindowChrome.IsHitTestVisibleInChrome="True" Margin="0,0,8,0" Padding="10,5"/>
-              <Border Background="#171C18" CornerRadius="6" Padding="8,3">
-                <TextBlock Text="{Binding AdminText}" Foreground="{Binding AdminBrush}" FontSize="11" VerticalAlignment="Center"/>
+              <Border Background="#171C18" CornerRadius="8" Padding="10,5" VerticalAlignment="Center">
+                <TextBlock Text="{Binding AdminText}" Foreground="{Binding AdminBrush}" FontSize="12" VerticalAlignment="Center"/>
               </Border>
+              <Border Width="1" Height="18" Background="{StaticResource BorderBrush}" Margin="14,0,6,0" VerticalAlignment="Center"/>
+              <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding StartupEnabled}"
+                            WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="登录后以管理员身份留在托盘">
+                <StackPanel Orientation="Horizontal">
+                  <Ellipse Width="7" Height="7" Fill="{StaticResource GoldBrush}" Margin="0,1,6,0"/>
+                  <TextBlock Text="开机自启动" VerticalAlignment="Center"/>
+                </StackPanel>
+              </ToggleButton>
+              <Button Content="退出" Style="{StaticResource ExitButton}" Click="OnExit"
+                      WindowChrome.IsHitTestVisibleInChrome="True" Margin="8,0,0,0" ToolTip="退出程序"/>
             </StackPanel>
           </Grid>
         </DockPanel>
       </Border>
 
-      <Border DockPanel.Dock="Bottom" Height="32" BorderBrush="{StaticResource AccentLineBrush}" BorderThickness="0,1,0,0">
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
-          <Ellipse Width="6" Height="6" Fill="{StaticResource TcpBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-          <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource WarmBrush}" FontSize="11" VerticalAlignment="Center"/>
-        </StackPanel>
+      <Border DockPanel.Dock="Bottom" Height="36" BorderBrush="#242830" BorderThickness="0,1,0,0">
+        <Grid Margin="22,0,18,0">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+            <Ellipse Width="6" Height="6" Fill="{StaticResource TcpBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource WarmBrush}" FontSize="12" VerticalAlignment="Center"/>
+          </StackPanel>
+          <TextBlock Text="点到窗口外面会收进托盘" Foreground="{StaticResource MutedBrush}" FontSize="11"
+                     HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
       </Border>
 
-      <DockPanel Margin="16,12,16,10">
+      <DockPanel Margin="22,16,22,14">
         <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
@@ -80,13 +97,6 @@
               <StackPanel Orientation="Horizontal">
                 <Ellipse Width="7" Height="7" Fill="{StaticResource TcpBrush}" Margin="0,1,6,0"/>
                 <TextBlock Text="自动刷新" VerticalAlignment="Center"/>
-              </StackPanel>
-            </ToggleButton>
-            <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding StartupEnabled}"
-                          WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="登录后以管理员身份打开">
-              <StackPanel Orientation="Horizontal">
-                <Ellipse Width="7" Height="7" Fill="{StaticResource GoldBrush}" Margin="0,1,6,0"/>
-                <TextBlock Text="开机自启动" VerticalAlignment="Center"/>
               </StackPanel>
             </ToggleButton>
           </StackPanel>
@@ -114,25 +124,26 @@
             </TextBlock>
           </Grid>
           <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <TextBlock Text="{Binding CountText}" Foreground="{StaticResource WarmBrush}"
-                       VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <Border Background="#171C18" CornerRadius="8" Padding="10,5" Margin="0,0,10,0" VerticalAlignment="Center">
+              <TextBlock Text="{Binding CountText}" Foreground="{StaticResource WarmBrush}" FontSize="12" VerticalAlignment="Center"/>
+            </Border>
             <Button Content="刷新" Style="{StaticResource AccentButton}" Click="OnRefreshClick"
                     WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="F5"/>
           </StackPanel>
         </Grid>
 
-        <Border Style="{StaticResource Card}" Padding="0">
+        <Border x:Name="ListCard" Style="{StaticResource Card}" Padding="0" SizeChanged="OnListCardSize">
           <Grid>
             <DockPanel>
               <Border DockPanel.Dock="Top" Background="#12151B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                <Grid Margin="12,9,18,8">
+                <Grid Margin="16,11,20,10">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="64"/>
-                    <ColumnDefinition Width="230"/>
-                    <ColumnDefinition Width="78"/>
-                    <ColumnDefinition Width="160"/>
-                    <ColumnDefinition Width="88"/>
                     <ColumnDefinition Width="72"/>
+                    <ColumnDefinition Width="240"/>
+                    <ColumnDefinition Width="84"/>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="96"/>
+                    <ColumnDefinition Width="76"/>
                     <ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="协议" Foreground="{StaticResource TcpBrush}" FontSize="12" Opacity="0.75"/>
@@ -150,13 +161,13 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
                       <StackPanel>
-                        <Border Background="#12151B" Padding="12,8,12,6" Visibility="{Binding GroupHeaderVisibility}">
+                        <Border Background="#12151B" Padding="16,10,16,7" Visibility="{Binding GroupHeaderVisibility}">
                           <StackPanel Orientation="Horizontal">
                             <Border Width="3" Height="14" CornerRadius="1" Background="{Binding OriginForeground}" Margin="0,1,8,0"/>
                             <TextBlock Text="{Binding GroupTitle}" Foreground="{Binding OriginForeground}" FontSize="13" FontWeight="SemiBold"/>
                           </StackPanel>
                         </Border>
-                        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                        <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,8">
                           <Border.Style>
                             <Style TargetType="Border">
                               <Setter Property="Background" Value="{Binding RowBackground}"/>
@@ -167,14 +178,14 @@
                               </Style.Triggers>
                             </Style>
                           </Border.Style>
-                          <Grid Margin="12,1">
+                          <Grid Margin="16,1,20,1">
                             <Grid.ColumnDefinitions>
-                              <ColumnDefinition Width="64"/>
-                              <ColumnDefinition Width="230"/>
-                              <ColumnDefinition Width="78"/>
-                              <ColumnDefinition Width="160"/>
-                              <ColumnDefinition Width="88"/>
                               <ColumnDefinition Width="72"/>
+                              <ColumnDefinition Width="240"/>
+                              <ColumnDefinition Width="84"/>
+                              <ColumnDefinition Width="180"/>
+                              <ColumnDefinition Width="96"/>
+                              <ColumnDefinition Width="76"/>
                               <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Border Grid.Column="0" Background="{Binding ProtocolBackground}" CornerRadius="5"

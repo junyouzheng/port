@@ -8,26 +8,16 @@ namespace Port;
 internal sealed class TrayService : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
-    private readonly Forms.ToolStripMenuItem _startupItem;
     private readonly Icon _iconImage;
 
-    public TrayService(Action toggle, Action toggleStartup, Action exit)
+    public TrayService(Action toggle)
     {
         _iconImage = MakeIcon();
-        _startupItem = new Forms.ToolStripMenuItem("开机自启动");
-        _startupItem.Click += (_, _) => toggleStartup();
-
-        var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add(_startupItem);
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) => exit());
-
         _icon = new Forms.NotifyIcon
         {
             Icon = _iconImage,
             Visible = true,
-            Text = "本机端口与进程面板",
-            ContextMenuStrip = menu
+            Text = "本机端口与进程面板"
         };
         _icon.MouseClick += (_, e) =>
         {
@@ -35,8 +25,6 @@ internal sealed class TrayService : IDisposable
                 toggle();
         };
     }
-
-    public void SetStartupChecked(bool enabled) => _startupItem.Checked = enabled;
 
     public void SetTip(string text)
     {
