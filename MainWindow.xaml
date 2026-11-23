@@ -4,133 +4,54 @@
         Title="本机端口与进程面板"
         AutomationProperties.AutomationId="port"
         Width="1080" Height="720"
+        MinWidth="960" MinHeight="640"
         WindowStartupLocation="CenterScreen"
-        WindowState="Maximized"
-        WindowStyle="None"
-        ResizeMode="NoResize"
-        ShowInTaskbar="False"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="CanResize"
+        ShowInTaskbar="True"
         Background="{StaticResource BgBrush}"
         Foreground="{StaticResource TextBrush}"
-        FontFamily="Microsoft YaHei UI, Segoe UI"
+        FontFamily="Bahnschrift, DengXian"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        PreviewKeyDown="OnPreviewKey"
-        StateChanged="OnStateChanged"
-        Deactivated="OnDeactivated">
-  <WindowChrome.WindowChrome>
-    <WindowChrome CaptionHeight="0" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
-  </WindowChrome.WindowChrome>
+        PreviewKeyDown="OnPreviewKey">
 
   <Border x:Name="ShellBorder" BorderThickness="0" Background="{StaticResource ShellBrush}">
     <Grid>
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="216"/>
+        <ColumnDefinition Width="280"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
 
-      <Border Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-        <DockPanel>
-          <StackPanel DockPanel.Dock="Top" Margin="16,22,16,8">
-            <StackPanel Orientation="Horizontal">
-              <Border Width="36" Height="36" CornerRadius="10" Background="#0A84FF" VerticalAlignment="Center">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                  <Border Width="16" Height="2" Background="White" CornerRadius="1" Margin="0,0,0,3"/>
-                  <Border Width="16" Height="2" Background="White" CornerRadius="1" Margin="0,0,0,3" Opacity="0.85"/>
-                  <Border Width="10" Height="2" Background="White" CornerRadius="1" HorizontalAlignment="Left" Margin="3,0,0,0" Opacity="0.7"/>
-                </StackPanel>
-              </Border>
-              <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="port" FontSize="16" FontWeight="Bold"/>
-                <TextBlock Text="本机端口" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,1,0,0"/>
-              </StackPanel>
-            </StackPanel>
-          </StackPanel>
+      <Border Grid.Column="0" Background="{StaticResource DrawerBrush}">
+        <Grid Margin="16,24,16,16">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
 
-          <StackPanel DockPanel.Dock="Bottom" Margin="10,8,10,16">
-            <StackPanel Orientation="Horizontal" Margin="8,0,8,10">
-              <Ellipse Width="6" Height="6" Fill="#30D158" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}" FontSize="11"
-                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-            </StackPanel>
-            <TextBlock Text="点到窗口外面会收进托盘" Foreground="{StaticResource MutedBrush}" FontSize="11"
-                       Margin="8,0,8,10" Opacity="0.8"/>
-            <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding StartupEnabled}"
-                          Margin="0,0,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                          WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="登录后以管理员身份留在托盘">
-              <TextBlock Text="开机自启动" VerticalAlignment="Center"/>
-            </ToggleButton>
-            <Button Content="退出" Style="{StaticResource ExitButton}" Click="OnExit"
-                    HorizontalAlignment="Stretch" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="退出程序"/>
-          </StackPanel>
+          <TextBlock VerticalAlignment="Center" FontFamily="Bahnschrift" FontWeight="Light"
+                     FontStretch="ExtraExpanded" FontSize="44">
+            <Run Text="p"/>
+            <Run Text="o" Foreground="#A8C7FA"/>
+            <Run Text="rt"/>
+          </TextBlock>
 
-          <StackPanel Margin="10,8,10,0">
-            <Border Background="{StaticResource NavSelectedBrush}" CornerRadius="8" Padding="12,9" Margin="0,2">
-              <StackPanel Orientation="Horizontal">
-                <Ellipse Width="8" Height="8" Fill="#0A84FF" VerticalAlignment="Center" Margin="2,0,10,0"/>
-                <TextBlock Text="端口" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </DockPanel>
-      </Border>
-
-      <DockPanel Grid.Column="1" Margin="20,18,20,16">
-        <Grid DockPanel.Dock="Top" Margin="0,0,0,14">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="监听端口" FontSize="20" FontWeight="Bold"/>
-            <TextBlock Text="查看正在监听的端口和占用进程" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
-          </StackPanel>
-          <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-            <Button Content="以管理员重新打开" Style="{StaticResource PrimaryButton}"
-                    Visibility="{Binding ElevateVisibility}" Click="OnElevate"
-                    WindowChrome.IsHitTestVisibleInChrome="True" Margin="0,0,8,0" Padding="10,5"/>
-            <Border Background="#282A36" CornerRadius="8" Padding="10,5" VerticalAlignment="Center">
-              <TextBlock Text="{Binding AdminText}" Foreground="{Binding AdminBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            </Border>
-          </StackPanel>
-        </Grid>
-
-        <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="360"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-            <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding IncludeSystem}"
-                          Margin="0" WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="显示系统端口">
-              <StackPanel Orientation="Horizontal">
-                <Ellipse Width="7" Height="7" Fill="{StaticResource SystemFgBrush}" Margin="0,1,6,0"/>
-                <TextBlock Text="系统" VerticalAlignment="Center"/>
-              </StackPanel>
-            </ToggleButton>
-            <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding IncludeUdp}"
-                          WindowChrome.IsHitTestVisibleInChrome="True">
-              <StackPanel Orientation="Horizontal">
-                <Ellipse Width="7" Height="7" Fill="{StaticResource UdpBrush}" Margin="0,1,6,0"/>
-                <TextBlock Text="UDP" VerticalAlignment="Center"/>
-              </StackPanel>
-            </ToggleButton>
-            <ToggleButton Style="{StaticResource ToggleChip}" IsChecked="{Binding AutoRefresh}"
-                          WindowChrome.IsHitTestVisibleInChrome="True">
-              <StackPanel Orientation="Horizontal">
-                <Ellipse Width="7" Height="7" Fill="{StaticResource TcpBrush}" Margin="0,1,6,0"/>
-                <TextBlock Text="自动刷新" VerticalAlignment="Center"/>
-              </StackPanel>
-            </ToggleButton>
-          </StackPanel>
-          <Grid Grid.Column="1" VerticalAlignment="Center">
+          <Grid Grid.Row="1" VerticalAlignment="Center">
             <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
                      AutomationProperties.AutomationId="search"
                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     WindowChrome.IsHitTestVisibleInChrome="True"/>
-            <TextBlock Text="端口、进程、路径" Margin="14,0,0,0" VerticalAlignment="Center"
-                       Foreground="{StaticResource MutedBrush}" IsHitTestVisible="False">
+                     />
+            <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                       Foreground="{StaticResource MutedBrush}" Margin="16,0,0,0"
+                       VerticalAlignment="Center" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+            <TextBlock Text="端口、进程、路径" Margin="48,0,0,0" VerticalAlignment="Center"
+                       Foreground="{StaticResource MutedBrush}" FontSize="16" IsHitTestVisible="False">
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
                   <Setter Property="Visibility" Value="Collapsed"/>
@@ -147,51 +68,112 @@
               </TextBlock.Style>
             </TextBlock>
           </Grid>
-          <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <Border Background="#282A36" CornerRadius="8" Padding="10,5" Margin="0,0,10,0" VerticalAlignment="Center">
-              <TextBlock Text="{Binding CountText}" Foreground="{StaticResource WarmBrush}" FontSize="12" VerticalAlignment="Center"/>
-            </Border>
-            <Button Content="刷新" Style="{StaticResource AccentButton}" Click="OnRefreshClick"
-                    WindowChrome.IsHitTestVisibleInChrome="True" ToolTip="F5"/>
-          </StackPanel>
-        </Grid>
 
+          <Button Grid.Row="2" Style="{StaticResource NavThird}" Tag="third" Click="OnNav"
+                  Margin="0" VerticalAlignment="Center" >
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE71D;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                         VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <TextBlock Text="第三方" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Button Grid.Row="3" Style="{StaticResource NavSystem}" Tag="system" Click="OnNav"
+                  Margin="0" VerticalAlignment="Center" >
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE770;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                         VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <TextBlock Text="系统" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Button Grid.Row="4" Style="{StaticResource NavUdp}" Tag="udp" Click="OnNav"
+                  Margin="0" VerticalAlignment="Center" >
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="&#xE701;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                         VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <TextBlock Text="UDP" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <Grid Grid.Row="5" Margin="0,0,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="8"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Content="刷新" Style="{StaticResource AccentButton}" Height="48" Click="OnRefreshClick"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center" Padding="8,0"
+                     ToolTip="F5"/>
+            <ToggleButton Grid.Column="2" Style="{StaticResource ToggleChip}" IsChecked="{Binding StartupEnabled}"
+                          Height="48" Margin="0" Padding="8,0"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalAlignment="Center"
+                          >
+              <TextBlock Text="开机自启动" VerticalAlignment="Center"/>
+            </ToggleButton>
+          </Grid>
+          <Grid Grid.Row="6" Margin="0">
+            <Button x:Name="ExitAsk" Content="退出" Style="{StaticResource ExitButton}" Click="OnExitAsk"
+                    HorizontalAlignment="Stretch" />
+            <Grid x:Name="ExitConfirm" Visibility="Collapsed">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Button Content="取消" Style="{StaticResource PrimaryButton}" Height="48" Padding="8,0"
+                      Click="OnExitCancel" />
+              <Button Grid.Column="2" Content="确认退出" Style="{StaticResource ExitButton}" Padding="8,0"
+                      Click="OnExitConfirm" />
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <DockPanel Grid.Column="1" Margin="24,16,24,16">
+        <Grid DockPanel.Dock="Top" Height="64" Margin="8,0,8,8">
+          <TextBlock Text="端口" FontFamily="DengXian" FontSize="34" FontWeight="Light" VerticalAlignment="Center"/>
+          <TextBlock Text="{Binding CountText}" FontSize="14" Foreground="{StaticResource MutedBrush}"
+                     HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
         <Border x:Name="ListCard" Style="{StaticResource Card}" Padding="0" SizeChanged="OnListCardSize">
           <Grid>
-            <DockPanel>
-              <Border DockPanel.Dock="Top" Background="#222433" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                <Grid Margin="16,12,20,11">
+            <ScrollViewer x:Name="ListScroll" Style="{StaticResource ListScrollViewer}"
+                          AutomationProperties.AutomationId="list"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          PreviewMouseLeftButtonDown="OnListDoubleClick">
+              <StackPanel>
+              <Border Background="#2B2930" BorderBrush="#49454F" BorderThickness="0,0,0,1">
+                <Grid Margin="16,12,16,12">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="72"/>
-                    <ColumnDefinition Width="240"/>
-                    <ColumnDefinition Width="84"/>
-                    <ColumnDefinition Width="180"/>
-                    <ColumnDefinition Width="96"/>
-                    <ColumnDefinition Width="76"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="64"/>
+                    <ColumnDefinition Width="1.1*" MinWidth="108"/>
+                    <ColumnDefinition Width="68"/>
+                    <ColumnDefinition Width="*" MinWidth="64"/>
+                    <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="60"/>
+                    <ColumnDefinition Width="2.4*" MinWidth="96"/>
                   </Grid.ColumnDefinitions>
-                  <TextBlock Grid.Column="0" Text="协议" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                  <TextBlock Grid.Column="1" Text="地址" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                  <TextBlock Grid.Column="2" Text="端口" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                  <TextBlock Grid.Column="3" Text="进程" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                  <TextBlock Grid.Column="4" Text="来源" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                  <TextBlock Grid.Column="5" Text="PID" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                  <TextBlock Grid.Column="6" Text="路径" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                  <TextBlock Grid.Column="0" Text="协议" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                  <TextBlock Grid.Column="1" Text="地址" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                  <TextBlock Grid.Column="2" Text="端口" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                  <TextBlock Grid.Column="3" Text="进程" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                  <TextBlock Grid.Column="4" Text="来源" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                  <TextBlock Grid.Column="5" Text="PID" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                  <TextBlock Grid.Column="6" Text="路径" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
                 </Grid>
               </Border>
-              <ScrollViewer x:Name="ListScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                            PreviewMouseLeftButtonDown="OnListDoubleClick">
                 <ItemsControl ItemsSource="{Binding Rows}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
                       <StackPanel>
-                        <Border Background="#222433" Padding="16,10,16,7" Visibility="{Binding GroupHeaderVisibility}">
-                          <TextBlock Text="{Binding GroupTitle}" Foreground="{Binding OriginForeground}" FontSize="13" FontWeight="Bold"/>
+                        <Border Background="Transparent" Padding="16,16,16,4" Visibility="{Binding GroupHeaderVisibility}">
+                          <TextBlock Text="{Binding GroupTitle}" Foreground="{StaticResource GoldBrush}" FontSize="14" FontWeight="Medium"/>
                         </Border>
-                        <Border BorderBrush="#323544" BorderThickness="0,0,0,1" Padding="0,8">
+                        <Border BorderBrush="#49454F" BorderThickness="0,0,0,1" Padding="0,6" Margin="8,0">
                           <Border.Style>
                             <Style TargetType="Border">
-                              <Setter Property="Background" Value="{Binding RowBackground}"/>
+                              <Setter Property="Background" Value="Transparent"/>
                               <Style.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
                                   <Setter Property="Background" Value="{StaticResource HoverBrush}"/>
@@ -199,51 +181,51 @@
                               </Style.Triggers>
                             </Style>
                           </Border.Style>
-                          <Grid Margin="16,1,20,1">
+                          <Grid Margin="8,6">
                             <Grid.ColumnDefinitions>
-                              <ColumnDefinition Width="72"/>
-                              <ColumnDefinition Width="240"/>
-                              <ColumnDefinition Width="84"/>
-                              <ColumnDefinition Width="180"/>
-                              <ColumnDefinition Width="96"/>
-                              <ColumnDefinition Width="76"/>
-                              <ColumnDefinition Width="*"/>
+                              <ColumnDefinition Width="64"/>
+                              <ColumnDefinition Width="1.1*" MinWidth="108"/>
+                              <ColumnDefinition Width="68"/>
+                              <ColumnDefinition Width="*" MinWidth="64"/>
+                              <ColumnDefinition Width="80"/>
+                              <ColumnDefinition Width="60"/>
+                              <ColumnDefinition Width="2.4*" MinWidth="96"/>
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Background="{Binding ProtocolBackground}" CornerRadius="6"
-                                    Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Border Grid.Column="0" Background="{Binding ProtocolBackground}" CornerRadius="8"
+                                    Padding="8,2" HorizontalAlignment="Left" VerticalAlignment="Center">
                               <TextBlock Text="{Binding Protocol}" Foreground="{Binding ProtocolForeground}"
-                                         FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                                         FontSize="12" FontWeight="Medium" VerticalAlignment="Center"/>
                             </Border>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Address}" FontSize="13" VerticalAlignment="Center"/>
-                              <Border Background="{Binding HintBackground}" CornerRadius="6" Padding="6,1"
+                            <DockPanel Grid.Column="1" VerticalAlignment="Center" LastChildFill="True">
+                              <Border DockPanel.Dock="Right" Background="{Binding HintBackground}" CornerRadius="8" Padding="8,2"
                                       Margin="8,0,0,0" VerticalAlignment="Center"
                                       Visibility="{Binding HintVisibility}">
-                                <TextBlock Text="{Binding AddressHint}" Foreground="{Binding HintForeground}" FontSize="11" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding AddressHint}" Foreground="{Binding HintForeground}" FontSize="12" FontWeight="Medium"/>
                               </Border>
-                            </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{Binding Port}" FontWeight="Bold" FontSize="14"
+                              <TextBlock Text="{Binding Address}" FontSize="14" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <TextBlock Grid.Column="2" Text="{Binding Port}" FontWeight="Medium" FontSize="14"
                                        Foreground="{StaticResource GoldBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="3" Text="{Binding ProcessName}" VerticalAlignment="Center" FontSize="13"
-                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding PathTip}"/>
-                            <Border Grid.Column="4" Background="{Binding OriginBackground}" CornerRadius="6"
-                                    Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <TextBlock Grid.Column="3" Text="{Binding ProcessDisplay}" VerticalAlignment="Center" FontSize="14"
+                                       TextWrapping="Wrap" ToolTip="{Binding PathTip}"/>
+                            <Border Grid.Column="4" Background="{Binding OriginBackground}" CornerRadius="8"
+                                    Padding="8,2" HorizontalAlignment="Left" VerticalAlignment="Center">
                               <TextBlock Text="{Binding Origin}" Foreground="{Binding OriginForeground}"
-                                         FontSize="11" FontWeight="Bold"/>
+                                         FontSize="12" FontWeight="Medium"/>
                             </Border>
-                            <TextBlock Grid.Column="5" Text="{Binding Pid}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
-                            <TextBlock Grid.Column="6" Text="{Binding PathText}" VerticalAlignment="Center" FontSize="12"
-                                       Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathTip}"/>
+                            <TextBlock Grid.Column="5" Text="{Binding Pid}" VerticalAlignment="Center" FontSize="14" Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock Grid.Column="6" Text="{Binding PathDisplay}" VerticalAlignment="Center" FontSize="14"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" ToolTip="{Binding PathTip}"/>
                           </Grid>
                         </Border>
                       </StackPanel>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-              </ScrollViewer>
-            </DockPanel>
+              </StackPanel>
+            </ScrollViewer>
             <TextBlock Text="没有匹配的监听端口" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Foreground="{StaticResource MutedBrush}" Visibility="{Binding EmptyVisibility}"/>
+                       Foreground="{StaticResource MutedBrush}" FontSize="16" Visibility="{Binding EmptyVisibility}"/>
           </Grid>
         </Border>
       </DockPanel>

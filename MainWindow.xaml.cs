@@ -1,24 +1,18 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Principal;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Shell;
 using System.Windows.Threading;
 
 namespace Port;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private readonly DispatcherTimer _timer;
-    private readonly bool _isAdmin;
     private readonly TrayService _tray;
     private IReadOnlyList<PortEntry> _all = [];
     private string _snapSig = "";
@@ -26,20 +20,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _refreshing;
     private bool _exitRequested;
     private bool _suppressStartup;
-    private bool _ignoreTrayToggle;
-    private bool _hiding;
-    private bool _forcingState;
-    private string? _notice;
-
     public MainWindow()
     {
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _timer.Tick += (_, _) => Refresh();
-        using (var identity = WindowsIdentity.GetCurrent())
-            _isAdmin = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
-        AdminText = _isAdmin ? "管理员" : "标准用户";
-        AdminBrush = Freeze(_isAdmin ? Color.FromRgb(0x30, 0xD1, 0x58) : Color.FromRgb(0xEB, 0xEB, 0xF5));
-        ElevateVisibility = _isAdmin ? Visibility.Collapsed : Visibility.Visible;
         DataContext = this;
         InitializeComponent();
         _tray = new TrayService(ToggleFromTray);
@@ -49,8 +31,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void BeginSession()
     {
         Refresh();
-        if (AutoRefresh)
-            _timer.Start();
         SyncStartup();
     }
 
@@ -66,43 +46,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IncludeSystem
+    public string Nav
     {
-        get => _includeSystem;
+        get => _nav;
         set
         {
-            if (Set(ref _includeSystem, value))
+            if (Set(ref _nav, value))
                 ApplyFilter();
         }
     }
-
-    public bool IncludeUdp
-    {
-        get => _includeUdp;
-        set
-        {
-            if (Set(ref _includeUdp, value))
-                ApplyFilter();
-        }
-    }
-
-    public bool AutoRefresh
-    {
-        get => _autoRefresh;
-        set
-        {
-            if (!Set(ref _autoRefresh, value) || !IsLoaded)
-                return;
-            if (value)
-                _timer.Start();
-            else
-                _timer.Stop();
-        }
-    }
-
-    public string AdminText { get; }
-    public Brush AdminBrush { get; }
-    public Visibility ElevateVisibility { get; }
 
     public bool StartupEnabled
     {
@@ -118,9 +70,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     StartupTask.SetEnabled(value);
                     StartupPreference.Save(value);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    StatusText = Stamp("开机启动没有写上：" + ex.Message);
                     return;
                 }
             }
@@ -129,7 +80,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
     public string CountText { get => _countText; private set => Set(ref _countText, value); }
     public Visibility EmptyVisibility { get => _emptyVisibility; private set => Set(ref _emptyVisibility, value); }
 
@@ -138,8 +88,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        if (PresentationSource.FromVisual(this) is HwndSource source)
-            source.AddHook(WndProc);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        var dark = 1;
+        DwmSetWindowAttribute(hwnd, 20, ref dark, Marshal.SizeOf<int>());
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -154,12 +105,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideToTray();
     }
 
-    protected override void OnClosed(EventArgs e)
-    {
-        _timer.Stop();
-        base.OnClosed(e);
-    }
-
     public void BringToFront()
     {
         if (!Dispatcher.CheckAccess())
@@ -169,7 +114,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         Show();
-        WindowState = WindowState.Maximized;
+        if (WindowState == WindowState.Minimized)
+            SystemCommands.RestoreWindow(this);
         Activate();
     }
 
@@ -186,36 +132,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SearchBox.SelectAll();
             e.Handled = true;
         }
+        else if (e.Key == Key.Escape && ExitConfirm.Visibility == Visibility.Visible)
+        {
+            HideExitConfirm();
+            e.Handled = true;
+        }
     }
 
     private void OnRefreshClick(object sender, RoutedEventArgs e) => Refresh();
 
-    private void OnStateChanged(object? sender, EventArgs e)
+    private void OnExitAsk(object sender, RoutedEventArgs e)
     {
-        if (_forcingState || _hiding || !IsVisible || _exitRequested || WindowState == WindowState.Maximized)
-            return;
-        _forcingState = true;
-        WindowState = WindowState.Maximized;
-        _forcingState = false;
+        ExitAsk.Visibility = Visibility.Collapsed;
+        ExitConfirm.Visibility = Visibility.Visible;
     }
 
-    private void OnDeactivated(object? sender, EventArgs e)
+    private void OnExitCancel(object sender, RoutedEventArgs e) => HideExitConfirm();
+
+    private void OnExitConfirm(object sender, RoutedEventArgs e) => ExitApp();
+
+    private void HideExitConfirm()
     {
-        if (!IsVisible || _exitRequested || _hiding)
-            return;
-        HideToTray();
-        // A tray left-click deactivates the window before MouseClick. Ignore that click so it stays hidden.
-        _ignoreTrayToggle = true;
-        Dispatcher.BeginInvoke(() => _ignoreTrayToggle = false, DispatcherPriority.ApplicationIdle);
+        ExitConfirm.Visibility = Visibility.Collapsed;
+        ExitAsk.Visibility = Visibility.Visible;
     }
 
-    private void OnElevate(object sender, RoutedEventArgs e) => RelaunchElevated();
-
-    private void OnExit(object sender, RoutedEventArgs e) => ExitApp();
+    private void OnNav(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string nav })
+            Nav = nav;
+    }
 
     private void OnListCardSize(object sender, SizeChangedEventArgs e)
     {
-        ListCard.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 8, 8);
+        ListCard.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 16, 16);
     }
 
     private void OnListDoubleClick(object sender, MouseButtonEventArgs e)
@@ -231,12 +181,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 try
                 {
                     Clipboard.SetText(text);
-                    _notice = $"已复制 {row.Address}:{row.Port}";
-                    StatusText = Stamp(_notice);
                 }
                 catch
                 {
-                    StatusText = Stamp("复制失败");
                 }
 
                 return;
@@ -270,12 +217,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             ApplyFilter();
-            StatusText = Stamp(_notice ?? "已更新 · 只读本机，不访问网络");
-            _notice = null;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            StatusText = Stamp("读取失败：" + ex.Message);
         }
         finally
         {
@@ -285,23 +229,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ApplyFilter()
     {
+        var query = _searchText.Trim();
+        var searching = query.Length > 0;
         var filtered = _all.Where(entry =>
         {
-            if (!IncludeSystem && entry.Origin == "系统")
-                return false;
-            if (!IncludeUdp && entry.Protocol == "UDP")
-                return false;
-            if (string.IsNullOrWhiteSpace(_searchText))
-                return true;
+            if (!searching)
+            {
+                return _nav switch
+                {
+                    "system" => entry.Origin == "系统" && entry.Protocol != "UDP",
+                    "udp" => entry.Protocol == "UDP",
+                    _ => entry.Origin != "系统" && entry.Protocol != "UDP"
+                };
+            }
+
             var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.ProcessName} {entry.Path} {entry.Pid} {entry.Kind} {entry.Origin}";
-            return blob.Contains(_searchText.Trim(), StringComparison.OrdinalIgnoreCase);
+            return blob.Contains(query, StringComparison.OrdinalIgnoreCase);
         }).ToList();
 
         var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Path}|{entry.Kind}|{entry.Origin}"))
-                  + $"|{_searchText}|{_includeUdp}|{_includeSystem}";
-        var third = filtered.Count(entry => entry.Origin != "系统");
-        var system = filtered.Count - third;
-        CountText = IncludeSystem ? $"第三方 {third} · 系统 {system}" : $"第三方 {third}";
+                  + $"|{query}|{(searching ? "*" : _nav)}";
+        CountText = searching
+            ? $"搜索 {filtered.Count}"
+            : _nav switch
+            {
+                "system" => $"系统 {filtered.Count}",
+                "udp" => $"UDP {filtered.Count}",
+                _ => $"第三方 {filtered.Count}"
+            };
 
         if (sig == _filterSig)
             return;
@@ -328,13 +283,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (_ignoreTrayToggle)
-            return;
-
-        if (IsVisible)
-            HideToTray();
-        else
+        if (!IsVisible || WindowState == WindowState.Minimized)
             BringToFront();
+        else
+            HideToTray();
     }
 
     private void HideToTray()
@@ -347,15 +299,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!IsVisible)
             return;
-        _hiding = true;
-        try
-        {
-            Hide();
-        }
-        finally
-        {
-            _hiding = false;
-        }
+        HideExitConfirm();
+        Hide();
     }
 
     private void ExitApp()
@@ -369,7 +314,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_exitRequested)
             return;
         _exitRequested = true;
-        _timer.Stop();
         _tray.Dispose();
         Close();
         System.Windows.Application.Current?.Shutdown();
@@ -385,85 +329,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 StartupTask.SetEnabled(preferred);
             StartupPreference.Save(preferred);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            StatusText = Stamp("开机启动没有写上：" + ex.Message);
             preferred = false;
         }
 
         _suppressStartup = true;
         StartupEnabled = preferred;
         _suppressStartup = false;
-    }
-
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        const int wmGetMinMaxInfo = 0x0024;
-        const int wmSysCommand = 0x0112;
-        if (msg == wmGetMinMaxInfo)
-        {
-            FitMaximizedToWorkArea(hwnd, lParam);
-            handled = true;
-        }
-        else if (msg == wmSysCommand)
-        {
-            var command = wParam.ToInt32() & 0xFFF0;
-            if (command is 0xF000 or 0xF010 or 0xF020 or 0xF120)
-                handled = true;
-        }
-
-        return IntPtr.Zero;
-    }
-
-    private static void FitMaximizedToWorkArea(IntPtr hwnd, IntPtr lParam)
-    {
-        var info = Marshal.PtrToStructure<MinMaxInfo>(lParam);
-        var monitor = MonitorFromWindow(hwnd, 2);
-        var monitorInfo = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
-        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref monitorInfo))
-            return;
-
-        var work = monitorInfo.rcWork;
-        var screen = monitorInfo.rcMonitor;
-        info.ptMaxPosition.x = work.Left - screen.Left;
-        info.ptMaxPosition.y = work.Top - screen.Top;
-        info.ptMaxSize.x = work.Right - work.Left;
-        info.ptMaxSize.y = work.Bottom - work.Top;
-        Marshal.StructureToPtr(info, lParam, true);
-    }
-
-    private void RelaunchElevated()
-    {
-        var path = Environment.ProcessPath;
-        if (string.IsNullOrEmpty(path) || !path.EndsWith("port.exe", StringComparison.OrdinalIgnoreCase))
-        {
-            StatusText = Stamp("请从 port.exe 打开后再提权");
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(path)
-            {
-                UseShellExecute = true,
-                Verb = "runas",
-                WorkingDirectory = Path.GetDirectoryName(path) ?? ""
-            });
-            ExitApp();
-        }
-        catch (Win32Exception)
-        {
-            StatusText = Stamp("没有授予管理员权限");
-        }
-    }
-
-    private static string Stamp(string text) => $"{DateTime.Now:HH:mm:ss}  {text}";
-
-    private static SolidColorBrush Freeze(Color color)
-    {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
     }
 
     private bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
@@ -479,54 +352,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     private string _searchText = "";
-    private bool _includeSystem;
-    private bool _includeUdp;
-    private bool _autoRefresh = true;
+    private string _nav = "third";
     private bool _startupEnabled;
-    private string _statusText = "正在读取本机端口";
     private string _countText = "";
     private Visibility _emptyVisibility = Visibility.Collapsed;
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MinMaxPoint
-    {
-        public int x;
-        public int y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MinMaxInfo
-    {
-        public MinMaxPoint ptReserved;
-        public MinMaxPoint ptMaxSize;
-        public MinMaxPoint ptMaxPosition;
-        public MinMaxPoint ptMinTrackSize;
-        public MinMaxPoint ptMaxTrackSize;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RectNative
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MonitorInfo
-    {
-        public int cbSize;
-        public RectNative rcMonitor;
-        public RectNative rcWork;
-        public int dwFlags;
-    }
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }
 
 public sealed class RowVm
@@ -556,7 +388,15 @@ public sealed class RowVm
     private static Brush BrushOf(string key) => (Brush)System.Windows.Application.Current.FindResource(key);
     public int Port => Entry.Port;
     public string ProcessName => Entry.ProcessName;
+    public string ProcessDisplay => WithWrapPoints(Entry.ProcessName);
     public int Pid => Entry.Pid;
     public string PathText => string.IsNullOrEmpty(Entry.Path) ? "—" : Entry.Path;
+    public string PathDisplay => string.IsNullOrEmpty(Entry.Path) ? "—" : WithWrapPoints(Entry.Path);
     public string PathTip => string.IsNullOrEmpty(Entry.Path) ? Entry.ProcessName : Entry.Path;
+
+    private static string WithWrapPoints(string text) =>
+        text.Replace("\\", "\\\u200B")
+            .Replace("/", "/\u200B")
+            .Replace("_", "_\u200B")
+            .Replace("-", "-\u200B");
 }
