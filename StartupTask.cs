@@ -3,13 +3,31 @@ using System.IO;
 using System.Security;
 using System.Text;
 
-namespace PortPanel;
+namespace Port;
 
 internal static class StartupTask
 {
-    private const string TaskName = "PortPanel";
+    internal const string SilentSwitch = "--silent";
+    private const string TaskName = "port";
+    private const string LegacyTaskName = "PortPanel";
 
     public static bool IsEnabled() => Run($"/Query /TN {TaskName}") == 0;
+
+    public static bool Matches(bool enabled)
+    {
+        var xml = QueryXml();
+        if (!enabled)
+            return xml is null;
+
+        var exe = Environment.ProcessPath;
+        if (xml is null || string.IsNullOrEmpty(exe))
+            return false;
+
+        var escaped = SecurityElement.Escape(exe) ?? exe;
+        var hasExe = xml.Contains(exe, StringComparison.OrdinalIgnoreCase)
+            || xml.Contains(escaped, StringComparison.OrdinalIgnoreCase);
+        return hasExe && xml.Contains(SilentSwitch, StringComparison.OrdinalIgnoreCase);
+    }
 
     public static void SetEnabled(bool enabled)
     {
@@ -30,7 +48,7 @@ internal static class StartupTask
             throw new InvalidOperationException("找不到程序路径");
 
         var user = Environment.UserDomainName + "\\" + Environment.UserName;
-        var xmlPath = Path.Combine(Path.GetTempPath(), "port-panel-startup.xml");
+        var xmlPath = Path.Combine(Path.GetTempPath(), "port-startup.xml");
         File.WriteAllText(xmlPath, BuildXml(exe, user), Encoding.Unicode);
         try
         {
@@ -78,10 +96,78 @@ internal static class StartupTask
               <Actions Context="Author">
                 <Exec>
                   <Command>{command}</Command>
+                  <Arguments>{SilentSwitch}</Arguments>
                 </Exec>
               </Actions>
             </Task>
             """;
+    }
+
+    private static string? QueryXml()
+    {
+        using var process = Process.Start(new ProcessStartInfo("schtasks.exe", $"/Query /TN {TaskName} /XML")
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        });
+        if (process is null)
+            return null;
+
+        using var stdout = new MemoryStream();
+        // Read off the UI thread. Waiting here would deadlock if the async read resumed on it.
+        var readOut = Task.Run(() => process.StandardOutput.BaseStream.CopyTo(stdout));
+        var readErr = Task.Run(() => process.StandardError.BaseStream.CopyTo(Stream.Null));
+        if (!process.WaitForExit(8000))
+        {
+            try { process.Kill(entireProcessTree: true); } catch { /* leaving */ }
+            try { Task.WaitAll(readOut, readErr); } catch { /* process gone */ }
+            return null;
+        }
+
+        process.WaitForExit();
+        try
+        {
+            Task.WaitAll(readOut, readErr);
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (process.ExitCode != 0 || stdout.Length == 0)
+            return null;
+
+        var xml = Decode(stdout.ToArray());
+        return xml.Contains("<Task", StringComparison.OrdinalIgnoreCase) ? xml : null;
+    }
+
+    private static string Decode(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return Encoding.Unicode.GetString(bytes);
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return Encoding.BigEndianUnicode.GetString(bytes);
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return Encoding.UTF8.GetString(bytes);
+        if (Array.IndexOf(bytes, (byte)0) >= 0)
+            return Encoding.Unicode.GetString(bytes);
+        return Encoding.UTF8.GetString(bytes);
+    }
+
+    public static void RemoveLegacy()
+    {
+        try
+        {
+            if (Run($"/Query /TN {LegacyTaskName}") != 0)
+                return;
+            Run($"/Delete /TN {LegacyTaskName} /F");
+        }
+        catch
+        {
+            // The next elevated launch can remove the old task.
+        }
     }
 
     private static int Run(string arguments)
@@ -102,18 +188,22 @@ internal static class StartupTask
 
 internal static class StartupPreference
 {
-    private static string FilePath => Path.Combine(
+    private static string FilePath => PreferencePath("port");
+    private static string LegacyFilePath => PreferencePath("port-panel");
+
+    private static string PreferencePath(string folder) => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "port-panel",
+        folder,
         "startup.txt");
 
     public static bool? Load()
     {
         try
         {
-            if (!File.Exists(FilePath))
+            var path = File.Exists(FilePath) ? FilePath : LegacyFilePath;
+            if (!File.Exists(path))
                 return null;
-            return File.ReadAllText(FilePath).Trim() == "1";
+            return File.ReadAllText(path).Trim() == "1";
         }
         catch
         {

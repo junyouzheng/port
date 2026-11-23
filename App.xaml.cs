@@ -2,7 +2,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 
-namespace PortPanel;
+namespace Port;
 
 public partial class App : System.Windows.Application
 {
@@ -39,15 +39,18 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        _instanceMutex = new Mutex(true, @"Local\PortPanel.Single", out var created);
+        // The logon task launches with --silent so sign-in does not open the window.
+        var silent = IsSilent(e.Args);
+        _instanceMutex = new Mutex(true, @"Local\port.Single", out var created);
         if (!created)
         {
-            SignalExisting();
+            if (!silent)
+                SignalExisting();
             Shutdown();
             return;
         }
 
-        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\PortPanel.Show");
+        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\port.Show");
         var window = new MainWindow();
         _showWatch = new CancellationTokenSource();
         var token = _showWatch.Token;
@@ -60,8 +63,12 @@ public partial class App : System.Windows.Application
                     window.Dispatcher.BeginInvoke(window.BringToFront);
             }
         }, token);
-        window.Show();
+        if (!silent)
+            window.Show();
     }
+
+    private static bool IsSilent(string[] args) =>
+        args.Any(arg => arg.Equals(StartupTask.SilentSwitch, StringComparison.OrdinalIgnoreCase));
 
     protected override void OnExit(ExitEventArgs e)
     {
@@ -75,7 +82,7 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            using var show = EventWaitHandle.OpenExisting(@"Local\PortPanel.Show");
+            using var show = EventWaitHandle.OpenExisting(@"Local\port.Show");
             show.Set();
         }
         catch (WaitHandleCannotBeOpenedException)
@@ -92,7 +99,7 @@ public partial class App : System.Windows.Application
                 continue;
             if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
                 return args[i + 1];
-            return Path.Combine(AppContext.BaseDirectory, "port-panel-dump.txt");
+            return Path.Combine(AppContext.BaseDirectory, "port-dump.txt");
         }
 
         return null;

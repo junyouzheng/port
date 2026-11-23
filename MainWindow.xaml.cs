@@ -13,7 +13,7 @@ using System.Windows.Media;
 using System.Windows.Shell;
 using System.Windows.Threading;
 
-namespace PortPanel;
+namespace Port;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
@@ -43,13 +43,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
         InitializeComponent();
         _tray = new TrayService(ToggleFromTray, () => StartupEnabled = !StartupEnabled, ExitApp);
-        Loaded += (_, _) =>
-        {
-            Refresh();
-            if (AutoRefresh)
-                _timer.Start();
-            SyncStartup();
-        };
+        Dispatcher.BeginInvoke(BeginSession, DispatcherPriority.ApplicationIdle);
+    }
+
+    private void BeginSession()
+    {
+        Refresh();
+        if (AutoRefresh)
+            _timer.Start();
+        SyncStartup();
     }
 
     public ObservableCollection<RowVm> Rows { get; } = new();
@@ -239,7 +241,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var list = await Task.Run(PortQuery.Snapshot);
-            if (!IsLoaded)
+            if (_exitRequested)
                 return;
             var sig = string.Join('\n', list.Select(entry =>
                 $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Path}|{entry.Kind}|{entry.Origin}"));
@@ -352,6 +354,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _timer.Stop();
         _tray.Dispose();
         Close();
+        System.Windows.Application.Current?.Shutdown();
     }
 
     private void SyncStartup()
@@ -359,7 +362,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var preferred = StartupPreference.Load() ?? true;
         try
         {
-            if (StartupTask.IsEnabled() != preferred)
+            StartupTask.RemoveLegacy();
+            if (!StartupTask.Matches(preferred))
                 StartupTask.SetEnabled(preferred);
             StartupPreference.Save(preferred);
         }
@@ -413,9 +417,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RelaunchElevated()
     {
         var path = Environment.ProcessPath;
-        if (string.IsNullOrEmpty(path) || !path.EndsWith("port-panel.exe", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(path) || !path.EndsWith("port.exe", StringComparison.OrdinalIgnoreCase))
         {
-            StatusText = Stamp("请从 port-panel.exe 打开后再提权");
+            StatusText = Stamp("请从 port.exe 打开后再提权");
             return;
         }
 

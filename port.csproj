@@ -6,8 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <RootNamespace>PortPanel</RootNamespace>
-    <AssemblyName>port-panel</AssemblyName>
+    <RootNamespace>Port</RootNamespace>
+    <AssemblyName>port</AssemblyName>
     <Version>1.0.0</Version>
     <Product>本机端口与进程面板</Product>
     <Description>查看本机监听端口。不访问网络。</Description>

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using DrawingColor = System.Drawing.Color;
 using Forms = System.Windows.Forms;
 
-namespace PortPanel;
+namespace Port;
 
 internal sealed class TrayService : IDisposable
 {
