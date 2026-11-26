@@ -218,3 +218,58 @@ internal static class StartupPreference
         File.WriteAllText(FilePath, enabled ? "1" : "0");
     }
 }
+
+internal static class SearchHistoryStore
+{
+    public const int Limit = 8;
+
+    private static string FilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "port",
+        "search.txt");
+
+    public static List<string> Load()
+    {
+        try
+        {
+            if (!File.Exists(FilePath))
+                return [];
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var items = new List<string>();
+            foreach (var line in File.ReadAllLines(FilePath))
+            {
+                var query = line.Trim();
+                if (query.Length == 0 || !seen.Add(query))
+                    continue;
+                items.Add(query);
+                if (items.Count == Limit)
+                    break;
+            }
+
+            return items;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public static void Save(IReadOnlyList<string> items)
+    {
+        try
+        {
+            if (items.Count == 0)
+            {
+                if (File.Exists(FilePath))
+                    File.Delete(FilePath);
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            File.WriteAllLines(FilePath, items);
+        }
+        catch
+        {
+        }
+    }
+}

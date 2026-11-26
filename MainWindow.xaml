@@ -14,7 +14,8 @@
         FontFamily="Bahnschrift, DengXian"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        PreviewKeyDown="OnPreviewKey">
+        PreviewKeyDown="OnPreviewKey"
+        PreviewMouseDown="OnPreviewMouse">
 
   <Border x:Name="ShellBorder" BorderThickness="0" Background="{StaticResource ShellBrush}">
     <Grid>
@@ -47,12 +48,14 @@
           <Grid Grid.Row="1" VerticalAlignment="Center">
             <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
                      AutomationProperties.AutomationId="search"
+                     Padding="48,0,44,0"
                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=60}"
-                     />
+                     LostKeyboardFocus="OnSearchLostFocus"
+                     PreviewKeyDown="OnSearchKey"/>
             <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="16"
                        Foreground="{StaticResource MutedBrush}" Margin="16,0,0,0"
                        VerticalAlignment="Center" HorizontalAlignment="Left" IsHitTestVisible="False"/>
-            <TextBlock Text="端口、进程、路径" Margin="48,0,0,0" VerticalAlignment="Center"
+            <TextBlock Text="端口、进程、路径" Margin="48,0,44,0" VerticalAlignment="Center"
                        Foreground="{StaticResource MutedBrush}" FontSize="16" IsHitTestVisible="False">
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
@@ -69,6 +72,55 @@
                 </Style>
               </TextBlock.Style>
             </TextBlock>
+            <Button x:Name="HistoryButton" Style="{StaticResource HistoryIconButton}"
+                    AutomationProperties.AutomationId="search-history"
+                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0"
+                    Click="OnHistoryToggle" ToolTip="搜索历史">
+              <TextBlock Text="&#xE81C;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+            </Button>
+            <Popup x:Name="SearchHistoryPopup" PlacementTarget="{Binding ElementName=SearchBox}"
+                   Placement="Bottom" VerticalOffset="6" StaysOpen="True"
+                   AllowsTransparency="True" PopupAnimation="Fade">
+              <Border x:Name="HistoryPanel" Background="#2B2930" BorderBrush="#49454F" BorderThickness="1"
+                      CornerRadius="16" Padding="6" SnapsToDevicePixels="True">
+                <StackPanel>
+                  <TextBlock Text="最近搜索" Margin="12,6,12,4" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                  <TextBlock Text="搜索后会记在这里" Margin="12,8,12,12" Foreground="{StaticResource MutedBrush}"
+                             FontSize="14" Visibility="{Binding HistoryEmptyVisibility}"/>
+                  <ListBox x:Name="HistoryList" ItemsSource="{Binding SearchHistory}"
+                           Background="Transparent" BorderThickness="0" Padding="0"
+                           Foreground="{StaticResource TextBrush}"
+                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                           ScrollViewer.CanContentScroll="False"
+                           ItemContainerStyle="{StaticResource HistoryListItem}"
+                           MaxHeight="248"
+                           Visibility="{Binding HistoryListVisibility}"
+                           KeyboardNavigation.TabNavigation="Once">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <Grid>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="32"/>
+                          </Grid.ColumnDefinitions>
+                          <Button Grid.Column="0" Style="{StaticResource HistoryPickButton}" Click="OnHistoryPick">
+                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" FontSize="14"/>
+                          </Button>
+                          <Button Grid.Column="1" Style="{StaticResource HistoryIconButton}" Width="32" Height="32"
+                                  Click="OnHistoryRemove" ToolTip="删除">
+                            <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                          </Button>
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                  <Button Content="清除历史" Style="{StaticResource HistoryClearButton}" Margin="4,2,4,4"
+                          Click="OnHistoryClear" Visibility="{Binding HistoryListVisibility}"/>
+                </StackPanel>
+              </Border>
+            </Popup>
           </Grid>
 
           <Button Grid.Row="2" Style="{StaticResource NavSystem}" Tag="system" Click="OnNav"

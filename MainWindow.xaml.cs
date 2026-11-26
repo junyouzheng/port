@@ -37,6 +37,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += (_, _) => Refresh();
         _refreshTimer.Start();
+        foreach (var query in SearchHistoryStore.Load())
+            SearchHistory.Add(query);
+        UpdateHistoryChrome();
         Dispatcher.BeginInvoke(BeginSession, DispatcherPriority.ApplicationIdle);
     }
 
@@ -56,6 +59,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return PortList.Template?.FindName("ListScroll", PortList) as ScrollViewer;
         }
     }
+
+    public ObservableCollection<string> SearchHistory { get; } = new();
+    public Visibility HistoryListVisibility => SearchHistory.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility HistoryEmptyVisibility => SearchHistory.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public string SearchText
     {
@@ -181,6 +188,199 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HideExitConfirm();
             e.Handled = true;
         }
+        else if (e.Key == Key.Escape && SearchHistoryPopup.IsOpen)
+        {
+            SearchHistoryPopup.IsOpen = false;
+            CommitSearch();
+            e.Handled = true;
+        }
+    }
+
+    private void OnSearchKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && SearchHistoryPopup.IsOpen)
+        {
+            SearchHistoryPopup.IsOpen = false;
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Down)
+        {
+            if (!SearchHistoryPopup.IsOpen)
+                OpenHistory();
+            if (HistoryList.Items.Count > 0 && HistoryList.SelectedIndex < HistoryList.Items.Count - 1)
+            {
+                HistoryList.SelectedIndex++;
+                HistoryList.ScrollIntoView(HistoryList.SelectedItem);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Up && SearchHistoryPopup.IsOpen)
+        {
+            if (HistoryList.SelectedIndex > 0)
+            {
+                HistoryList.SelectedIndex--;
+                HistoryList.ScrollIntoView(HistoryList.SelectedItem);
+            }
+            else
+                HistoryList.SelectedIndex = -1;
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key != Key.Enter)
+            return;
+        if (SearchHistoryPopup.IsOpen && HistoryList.SelectedItem is string picked)
+            ApplyHistory(picked);
+        else
+        {
+            CommitSearch();
+            SearchHistoryPopup.IsOpen = false;
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnSearchLostFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (e.NewFocus is DependencyObject next && (IsInside(next, HistoryPanel) || IsInside(next, HistoryButton)))
+        {
+            var query = SearchBox.Text.Trim();
+            if (!string.Equals(_searchText, query, StringComparison.Ordinal))
+                SearchText = query;
+            return;
+        }
+
+        CommitSearch();
+        SearchHistoryPopup.IsOpen = false;
+    }
+
+    private void OnPreviewMouse(object sender, MouseButtonEventArgs e)
+    {
+        if (!SearchHistoryPopup.IsOpen || e.OriginalSource is not DependencyObject source)
+            return;
+        if (IsInside(source, HistoryButton) || IsInside(source, HistoryPanel))
+            return;
+        SearchHistoryPopup.IsOpen = false;
+        CommitSearch();
+    }
+
+    private void OnHistoryToggle(object sender, RoutedEventArgs e)
+    {
+        if (SearchHistoryPopup.IsOpen)
+        {
+            SearchHistoryPopup.IsOpen = false;
+            CommitSearch();
+        }
+        else
+            OpenHistory();
+    }
+
+    private void OnHistoryPick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: string query })
+            ApplyHistory(query);
+    }
+
+    private void OnHistoryRemove(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: string query })
+            return;
+        RemoveHistory(query);
+        e.Handled = true;
+    }
+
+    private void OnHistoryClear(object sender, RoutedEventArgs e)
+    {
+        SearchHistory.Clear();
+        SearchHistoryStore.Save(SearchHistory);
+        UpdateHistoryChrome();
+        HistoryList.SelectedIndex = -1;
+    }
+
+    private void OpenHistory()
+    {
+        if (SearchBox.ActualWidth > 0)
+            HistoryPanel.Width = SearchBox.ActualWidth;
+        HistoryList.SelectedIndex = -1;
+        SearchHistoryPopup.IsOpen = true;
+    }
+
+    private void ApplyHistory(string query)
+    {
+        SearchText = query;
+        RememberSearch(query);
+        SearchHistoryPopup.IsOpen = false;
+        SearchBox.Focus();
+        SearchBox.SelectAll();
+    }
+
+    private void CommitSearch()
+    {
+        var query = SearchBox.Text.Trim();
+        if (!string.Equals(_searchText, query, StringComparison.Ordinal))
+            SearchText = query;
+        if (query.Length > 0)
+            RememberSearch(query);
+    }
+
+    private void RememberSearch(string query)
+    {
+        query = query.Trim().Replace('\r', ' ').Replace('\n', ' ');
+        if (query.Length == 0)
+            return;
+        if (query.Length > 200)
+            query = query[..200];
+        if (SearchHistory.Count > 0 && string.Equals(SearchHistory[0], query, StringComparison.Ordinal))
+            return;
+
+        for (var i = SearchHistory.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(SearchHistory[i], query, StringComparison.OrdinalIgnoreCase))
+                SearchHistory.RemoveAt(i);
+        }
+
+        SearchHistory.Insert(0, query);
+        while (SearchHistory.Count > SearchHistoryStore.Limit)
+            SearchHistory.RemoveAt(SearchHistory.Count - 1);
+        SearchHistoryStore.Save(SearchHistory);
+        UpdateHistoryChrome();
+    }
+
+    private void RemoveHistory(string query)
+    {
+        for (var i = SearchHistory.Count - 1; i >= 0; i--)
+        {
+            if (string.Equals(SearchHistory[i], query, StringComparison.OrdinalIgnoreCase))
+                SearchHistory.RemoveAt(i);
+        }
+
+        SearchHistoryStore.Save(SearchHistory);
+        UpdateHistoryChrome();
+        if (HistoryList.SelectedIndex >= HistoryList.Items.Count)
+            HistoryList.SelectedIndex = HistoryList.Items.Count - 1;
+    }
+
+    private void UpdateHistoryChrome()
+    {
+        OnPropertyChanged(nameof(HistoryListVisibility));
+        OnPropertyChanged(nameof(HistoryEmptyVisibility));
+    }
+
+    private static bool IsInside(DependencyObject? node, DependencyObject? root)
+    {
+        while (node != null)
+        {
+            if (ReferenceEquals(node, root))
+                return true;
+            node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+        }
+
+        return false;
     }
 
     private void OnRowMenuOpened(object sender, RoutedEventArgs e)
@@ -472,6 +672,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!IsVisible)
             return;
         HideExitConfirm();
+        SearchHistoryPopup.IsOpen = false;
+        CommitSearch();
         Hide();
     }
 
