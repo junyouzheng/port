@@ -47,7 +47,7 @@
           <Grid Grid.Row="1" VerticalAlignment="Center">
             <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}"
                      AutomationProperties.AutomationId="search"
-                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=60}"
                      />
             <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="16"
                        Foreground="{StaticResource MutedBrush}" Margin="16,0,0,0"
@@ -161,34 +161,56 @@
         </Grid>
         <Border x:Name="ListCard" Style="{StaticResource Card}" Padding="0" SizeChanged="OnListCardSize">
           <Grid>
-            <ScrollViewer x:Name="ListScroll" Style="{StaticResource ListScrollViewer}"
-                          AutomationProperties.AutomationId="list"
-                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
-                          PreviewMouseLeftButtonDown="OnListDoubleClick">
-              <StackPanel>
-              <Border Background="#2B2930" BorderBrush="#49454F" BorderThickness="0,0,0,1">
-                <Grid Margin="16,12,16,12">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="64"/>
-                    <ColumnDefinition Width="1.1*" MinWidth="108"/>
-                    <ColumnDefinition Width="68"/>
-                    <ColumnDefinition Width="*" MinWidth="64"/>
-                    <ColumnDefinition Width="80"/>
-                    <ColumnDefinition Width="60"/>
-                    <ColumnDefinition Width="2.4*" MinWidth="96"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Grid.Column="0" Text="协议" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                  <TextBlock Grid.Column="1" Text="{Binding AddressHeader}" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                  <TextBlock Grid.Column="2" Text="{Binding PortHeader}" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                  <TextBlock Grid.Column="3" Text="进程" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                  <TextBlock Grid.Column="4" Text="来源" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                  <TextBlock Grid.Column="5" Text="PID" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                  <TextBlock Grid.Column="6" Text="路径" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
-                </Grid>
-              </Border>
-                <ItemsControl ItemsSource="{Binding Rows}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Background="#2B2930" BorderBrush="#49454F" BorderThickness="0,0,0,1">
+              <Grid Margin="16,12,16,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="64"/>
+                  <ColumnDefinition Width="1.1*" MinWidth="108"/>
+                  <ColumnDefinition Width="68"/>
+                  <ColumnDefinition Width="*" MinWidth="64"/>
+                  <ColumnDefinition Width="80"/>
+                  <ColumnDefinition Width="60"/>
+                  <ColumnDefinition Width="2.4*" MinWidth="96"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="协议" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                <TextBlock Grid.Column="1" Text="{Binding AddressHeader}" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                <TextBlock Grid.Column="2" Text="{Binding PortHeader}" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                <TextBlock Grid.Column="3" Text="进程" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                <TextBlock Grid.Column="4" Text="来源" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                <TextBlock Grid.Column="5" Text="PID" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+                <TextBlock Grid.Column="6" Text="路径" Foreground="{StaticResource MutedBrush}" FontSize="12" FontWeight="Medium"/>
+              </Grid>
+            </Border>
+            <ItemsControl x:Name="PortList" Grid.Row="1" ItemsSource="{Binding Rows}"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel"
+                          ScrollViewer.CanContentScroll="True"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto">
+              <ItemsControl.Template>
+                <ControlTemplate TargetType="ItemsControl">
+                  <ScrollViewer x:Name="ListScroll" Focusable="False" CanContentScroll="True"
+                                Style="{StaticResource ListScrollViewer}"
+                                AutomationProperties.AutomationId="list"
+                                HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                PreviewMouseLeftButtonDown="OnListDoubleClick">
+                    <ItemsPresenter />
+                  </ScrollViewer>
+                </ControlTemplate>
+              </ItemsControl.Template>
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
                       <StackPanel>
                         <Border Background="Transparent" Padding="16,16,16,4" Visibility="{Binding GroupHeaderVisibility}">
                           <TextBlock Text="{Binding GroupTitle}" Foreground="{StaticResource GoldBrush}" FontSize="14" FontWeight="Medium"/>
@@ -254,11 +276,9 @@
                         </Border>
                       </StackPanel>
                     </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
-            </ScrollViewer>
-            <TextBlock Text="{Binding EmptyText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Grid.Row="1" Text="{Binding EmptyText}" HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="{StaticResource MutedBrush}" FontSize="16" Visibility="{Binding EmptyVisibility}"/>
           </Grid>
         </Border>

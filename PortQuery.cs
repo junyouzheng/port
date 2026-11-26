@@ -20,7 +20,8 @@ public sealed record PortEntry(
     string Origin,
     string Service,
     string RemoteAddress,
-    int RemotePort);
+    int RemotePort,
+    string Search);
 
 internal static class PortQuery
 {
@@ -213,19 +214,26 @@ internal static class PortQuery
         if (string.IsNullOrEmpty(kind) && info.Protected && info.Name is not "权限不足" and not "已退出")
             kind = "系统";
 
+        var shownRemote = remotePort > 0 ? remoteAddress : "";
+        var shownRemotePort = remotePort > 0 ? remotePort : 0;
+        var origin = IsSystem(info.Name, info.Path, pid) ? "系统" : "第三方";
+        var service = ServiceLabel(info.Name, pid, services);
+        var hint = Hint(address);
+        var search = $"{protocol} {address} {hint} {port} {shownRemote} {shownRemotePort} {info.Name} {service} {info.Path} {pid} {kind} {origin}";
         into.Add(new PortEntry(
             protocol,
             address,
-            Hint(address),
+            hint,
             port,
             pid,
             info.Name,
             info.Path,
             kind,
-            IsSystem(info.Name, info.Path, pid) ? "系统" : "第三方",
-            ServiceLabel(info.Name, pid, services),
-            remotePort > 0 ? remoteAddress : "",
-            remotePort > 0 ? remotePort : 0));
+            origin,
+            service,
+            shownRemote,
+            shownRemotePort,
+            search));
     }
 
     private static string ServiceLabel(string processName, int pid, Dictionary<int, string> services)

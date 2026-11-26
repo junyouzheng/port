@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -17,8 +18,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private readonly TrayService _tray;
     private IReadOnlyList<PortEntry> _all = [];
-    private string _snapSig = "";
-    private string _filterSig = "";
+    private IReadOnlyList<PortEntry> _narrow = [];
+    private string _narrowQuery = "";
+    private string _narrowScope = "";
+    private IReadOnlyList<PortEntry> _shown = [];
+    private string _shownQuery = "";
+    private string _shownScope = "";
     private bool _refreshing;
     private bool _exitRequested;
     private bool _suppressStartup;
@@ -41,7 +46,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncStartup();
     }
 
-    public ObservableCollection<RowVm> Rows { get; } = new();
+    public RowList Rows { get; } = new();
+
+    private ScrollViewer? ListScroll
+    {
+        get
+        {
+            PortList.ApplyTemplate();
+            return PortList.Template?.FindName("ListScroll", PortList) as ScrollViewer;
+        }
+    }
 
     public string SearchText
     {
@@ -300,19 +314,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var list = await Task.Run(PortQuery.Snapshot);
-            if (_exitRequested)
-                return;
-            var sig = string.Join('\n', list.Select(entry =>
-                $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.ProcessName}|{entry.Service}|{entry.Path}|{entry.Kind}|{entry.Origin}|{entry.RemoteAddress}|{entry.RemotePort}"));
-            if (sig != _snapSig)
+            var previous = _all;
+            var hadView = _shownScope.Length > 0;
+            var list = await Task.Run(() =>
             {
-                _snapSig = sig;
-                _all = list;
-                var tcpCount = list.Count(entry => entry.Protocol == "TCP" && entry.RemotePort == 0);
-                _tray.SetTip($"port · {tcpCount} 个 TCP");
+                var snapshot = PortQuery.Snapshot();
+                return hadView && SameSnapshot(snapshot, previous) ? null : snapshot;
+            });
+            if (_exitRequested || list == null)
+                return;
+
+            _all = list;
+            _narrowQuery = "";
+            var tcpCount = 0;
+            foreach (var entry in list)
+            {
+                if (entry.Protocol == "TCP" && entry.RemotePort == 0)
+                    tcpCount++;
             }
 
+            _tray.SetTip($"port · {tcpCount} 个 TCP");
             ApplyFilter();
         }
         catch (Exception)
@@ -328,26 +349,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var query = _searchText.Trim();
         var searching = query.Length > 0;
-        var filtered = _all.Where(entry =>
+        var scope = searching ? "*" : _nav;
+        IReadOnlyList<PortEntry> source = _all;
+        if (searching
+            && _narrowScope == "*"
+            && _narrowQuery.Length > 0
+            && query.StartsWith(_narrowQuery, StringComparison.OrdinalIgnoreCase))
+            source = _narrow;
+
+        var filtered = new List<PortEntry>();
+        if (searching)
         {
-            if (!searching)
+            foreach (var entry in source)
             {
-                return _nav switch
-                {
-                    "system" => entry.RemotePort == 0 && entry.Origin == "系统" && entry.Protocol != "UDP",
-                    "udp" => entry.RemotePort == 0 && entry.Protocol == "UDP",
-                    "exposed" => entry.RemotePort == 0 && entry.AddressHint == "全部网卡",
-                    "link" => entry.RemotePort > 0,
-                    _ => entry.RemotePort == 0 && entry.Origin != "系统" && entry.Protocol != "UDP"
-                };
+                if (entry.Search.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    filtered.Add(entry);
             }
+        }
+        else
+        {
+            foreach (var entry in source)
+            {
+                if (InNav(entry))
+                    filtered.Add(entry);
+            }
+        }
 
-            var blob = $"{entry.Protocol} {entry.Address} {entry.AddressHint} {entry.Port} {entry.RemoteAddress} {entry.RemotePort} {entry.ProcessName} {entry.Service} {entry.Path} {entry.Pid} {entry.Kind} {entry.Origin}";
-            return blob.Contains(query, StringComparison.OrdinalIgnoreCase);
-        }).ToList();
-
-        var sig = string.Join('\n', filtered.Select(entry => $"{entry.Protocol}|{entry.Address}|{entry.Port}|{entry.Pid}|{entry.Service}|{entry.Path}|{entry.Kind}|{entry.Origin}|{entry.RemoteAddress}|{entry.RemotePort}"))
-                  + $"|{query}|{(searching ? "*" : _nav)}";
+        _narrow = filtered;
+        _narrowQuery = searching ? query : "";
+        _narrowScope = scope;
         CountText = searching
             ? $"搜索 {filtered.Count}"
             : _nav switch
@@ -359,21 +389,62 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _ => $"第三方 {filtered.Count}"
             };
 
-        if (sig == _filterSig)
+        if (scope == _shownScope
+            && string.Equals(query, _shownQuery, StringComparison.OrdinalIgnoreCase)
+            && SameSnapshot(filtered, _shown))
             return;
-        _filterSig = sig;
+
+        _shown = filtered;
+        _shownQuery = query;
+        _shownScope = scope;
 
         var offset = ListScroll?.VerticalOffset ?? 0;
-        Rows.Clear();
+        var rows = new List<RowVm>(filtered.Count);
         string? previous = null;
         foreach (var entry in filtered)
         {
-            Rows.Add(new RowVm(entry, entry.Origin != previous));
+            rows.Add(new RowVm(entry, entry.Origin != previous));
             previous = entry.Origin;
         }
-        EmptyVisibility = Rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (ListScroll != null)
-            Dispatcher.BeginInvoke(() => ListScroll.ScrollToVerticalOffset(offset), DispatcherPriority.Background);
+
+        Rows.Reset(rows);
+        EmptyVisibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (offset > 0)
+            Dispatcher.BeginInvoke(() => ListScroll?.ScrollToVerticalOffset(offset), DispatcherPriority.Background);
+    }
+
+    private bool InNav(PortEntry entry) => _nav switch
+    {
+        "system" => entry.RemotePort == 0 && entry.Origin == "系统" && entry.Protocol != "UDP",
+        "udp" => entry.RemotePort == 0 && entry.Protocol == "UDP",
+        "exposed" => entry.RemotePort == 0 && entry.AddressHint == "全部网卡",
+        "link" => entry.RemotePort > 0,
+        _ => entry.RemotePort == 0 && entry.Origin != "系统" && entry.Protocol != "UDP"
+    };
+
+    private static bool SameSnapshot(IReadOnlyList<PortEntry> next, IReadOnlyList<PortEntry> prev)
+    {
+        if (next.Count != prev.Count)
+            return false;
+        for (var i = 0; i < next.Count; i++)
+        {
+            var a = next[i];
+            var b = prev[i];
+            if (a.Port != b.Port
+                || a.Pid != b.Pid
+                || a.RemotePort != b.RemotePort
+                || !string.Equals(a.Protocol, b.Protocol, StringComparison.Ordinal)
+                || !string.Equals(a.Address, b.Address, StringComparison.Ordinal)
+                || !string.Equals(a.RemoteAddress, b.RemoteAddress, StringComparison.Ordinal)
+                || !string.Equals(a.ProcessName, b.ProcessName, StringComparison.Ordinal)
+                || !string.Equals(a.Service, b.Service, StringComparison.Ordinal)
+                || !string.Equals(a.Path, b.Path, StringComparison.Ordinal)
+                || !string.Equals(a.Kind, b.Kind, StringComparison.Ordinal)
+                || !string.Equals(a.Origin, b.Origin, StringComparison.Ordinal))
+                return false;
+        }
+
+        return true;
     }
 
     private void ToggleFromTray()
@@ -464,8 +535,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }
 
+public sealed class RowList : ObservableCollection<RowVm>
+{
+    public void Reset(IReadOnlyList<RowVm> rows)
+    {
+        CheckReentrancy();
+        Items.Clear();
+        foreach (var row in rows)
+            Items.Add(row);
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
+}
+
 public sealed class RowVm
 {
+    private static readonly Dictionary<string, Brush> BrushCache = new(StringComparer.Ordinal);
+    private string? _processDisplay;
+    private string? _pathDisplay;
+
     public RowVm(PortEntry entry, bool showGroup)
     {
         Entry = entry;
@@ -491,15 +580,23 @@ public sealed class RowVm
     public Brush HintBackground => BrushOf(!IsLink && Entry.AddressHint == "仅本机" ? "LocalSoftBrush" : "AnySoftBrush");
     public Visibility HintVisibility => string.IsNullOrEmpty(AddressHintText) ? Visibility.Collapsed : Visibility.Visible;
 
-    private static Brush BrushOf(string key) => (Brush)System.Windows.Application.Current.FindResource(key);
+    private static Brush BrushOf(string key)
+    {
+        if (BrushCache.TryGetValue(key, out var brush))
+            return brush;
+        brush = (Brush)System.Windows.Application.Current.FindResource(key);
+        BrushCache[key] = brush;
+        return brush;
+    }
+
     public int Port => Entry.Port;
     public string ProcessName => Entry.ProcessName;
-    public string ProcessDisplay => WithWrapPoints(Entry.ProcessName);
+    public string ProcessDisplay => _processDisplay ??= WithWrapPoints(Entry.ProcessName);
     public string Service => Entry.Service;
     public Visibility ServiceVisibility => string.IsNullOrEmpty(Entry.Service) ? Visibility.Collapsed : Visibility.Visible;
     public int Pid => Entry.Pid;
     public string PathText => string.IsNullOrEmpty(Entry.Path) ? "—" : Entry.Path;
-    public string PathDisplay => string.IsNullOrEmpty(Entry.Path) ? "—" : WithWrapPoints(Entry.Path);
+    public string PathDisplay => _pathDisplay ??= string.IsNullOrEmpty(Entry.Path) ? "—" : WithWrapPoints(Entry.Path);
     public string PathTip => string.IsNullOrEmpty(Entry.Path) ? Entry.ProcessName : Entry.Path;
 
     private static string WithWrapPoints(string text) =>
